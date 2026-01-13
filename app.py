@@ -31,7 +31,21 @@ from datetime import datetime, date, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'inventory.db')
+# Determine a base directory for persistent data.  On Render, a disk is mounted
+# at /var/data.  Use the DATA_DIR environment variable if it is set; otherwise
+# fall back to '/var/data' when running on Render.  When no disk is attached
+# (e.g. during local development), default to the directory containing this file.
+DATA_DIR = os.environ.get('DATA_DIR')
+if DATA_DIR:
+    # Ensure the directory exists
+    os.makedirs(DATA_DIR, exist_ok=True)
+else:
+    # Use /var/data if it exists (Render mount point), else use current directory
+    default_path = '/var/data'
+    DATA_DIR = default_path if os.path.isdir(default_path) else os.path.dirname(__file__)
+
+# Construct the full path to the SQLite database inside the data directory.
+DB_PATH = os.path.join(DATA_DIR, 'inventory.db')
 
 
 def init_db():
@@ -258,7 +272,9 @@ def get_summary():
             (start.isoformat(), end.isoformat()),
         )
         total = c.fetchone()[0] or 0.0
-        label = start.strftime('%Y-%m')
+        # Format the month label with full month name and year (e.g., "January 2026")
+        # This makes the monthly sales table easier to read at a glance.
+        label = start.strftime('%B %Y')
         monthly_sales.append((label, total))
         # Move to previous month
         if month == 1:
