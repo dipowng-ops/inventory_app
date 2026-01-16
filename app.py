@@ -8,7 +8,6 @@ import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from io import BytesIO
-import cgi
 import mimetypes
 
 DB_PATH = os.path.join(os.environ.get('DATA_DIR', '/var/data') if os.path.isdir('/var/data') else os.path.dirname(__file__), 'inventory.db')
@@ -117,7 +116,8 @@ class InventoryHandler(BaseHTTPRequestHandler):
         user = get_user_by_session(session_id) if session_id else None
 
         if path == '/':
-            return self.redirect('/login')
+            # Serve the home page. The login page is no longer the landing page.
+            return self.render_home(user)
         elif path == '/register':
             return self.render_register(user)
         elif path == '/login':
@@ -166,7 +166,41 @@ class InventoryHandler(BaseHTTPRequestHandler):
         <p>Don't have an account? <a href='/register'>Register</a></p>
         </div></body></html>
         """
-        self.respond(content)
+        # Respond to the client with the login page
+        return self.respond(content)
+
+    def render_home(self, user):
+        """
+        Render the public home page. This page welcomes users to Dipower Stores
+        and provides navigation buttons for login and registration. It uses
+        animated text instead of a full video to create a dynamic feel while
+        remaining lightweight.
+
+        Args:
+            user: The current user (unused here but kept for consistency with
+                  other render functions).
+
+        Returns:
+            A HTTP response containing the home page HTML.
+        """
+        content = f"""
+        <html>
+        <head><title>Dipower Stores</title>{self.styles()}</head>
+        <body>
+        <div class='container'>
+        <img src='/static/header.png' class='header'>
+        <h1>Dipower Stores</h1>
+        <p>Your one‑stop inventory and management solution.</p>
+        <div class='welcome-video'><h2>Welcome to Dipower Stores</h2></div>
+        <div class='home-buttons'>
+            <a href='/login'>Login</a>
+            <a href='/register'>Register</a>
+        </div>
+        </div>
+        </body>
+        </html>
+        """
+        return self.respond(content)
 
     def render_register(self, user):
         # CEO registration only if no CEO exists
@@ -338,6 +372,12 @@ class InventoryHandler(BaseHTTPRequestHandler):
         .header { width:100%; border-radius:8px; margin-bottom:20px; }
         ul { list-style: none; padding-left:0; }
         li { margin-bottom:8px; }
+        /* Home page specific styles */
+        .welcome-video { text-align: center; margin: 20px 0; font-size: 1.5em; color: #2a4a7b; animation: flash 2s infinite; }
+        @keyframes flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+        .home-buttons { display: flex; justify-content: center; gap: 20px; margin-top: 20px; }
+        .home-buttons a { background-color: #2a4a7b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; }
+        .home-buttons a:hover { background-color: #1d345b; }
         </style>
         """
 
