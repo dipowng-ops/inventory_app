@@ -30,6 +30,7 @@ import base64
 import hashlib
 import secrets
 import sqlite3
+import mimetypes
 import datetime as dt
 from urllib.parse import parse_qs, urlparse, quote, unquote
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -72,6 +73,11 @@ def db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+def ensure_column(conn, table, col):
+    cols=[r["name"] for r in conn.execute(f"PRAGMA table_info({table})")]
+    return col in cols
+
 
 def init_db():
     with db() as conn:
@@ -134,6 +140,33 @@ def init_db():
     # (SQLite partial unique indexes are supported)
     with db() as conn:
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_one_ceo ON users(role) WHERE role='CEO';")
+
+        # --- schema upgrades (safe migrations) ---
+        if not ensure_column(conn, "products", "product_code"):
+            conn.execute("ALTER TABLE products ADD COLUMN product_code TEXT")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_code ON products(product_code)")
+
+        if not ensure_column(conn, "products", "is_archived"):
+            conn.execute("ALTER TABLE products ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_products_archived ON products(is_archived)")
+
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS product_change_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL,
+            requested_by INTEGER NOT NULL,
+            change_type TEXT NOT NULL CHECK(change_type IN ('EDIT','DELETE')),
+            proposed_data TEXT,
+            status TEXT NOT NULL CHECK(status IN ('PENDING','APPROVED','REJECTED')),
+            reviewed_by INTEGER,
+            reviewed_at TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE,
+            FOREIGN KEY(requested_by) REFERENCES users(id) ON DELETE SET NULL,
+            FOREIGN KEY(reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+        )
+        """)
+
 
 def log_action(user_id, action, meta=None):
     with db() as conn:
@@ -436,6 +469,51 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self.send_html(self.layout(u, "<h2>Forbidden</h2>"), 403)
             return self.page_approvals(u)
 
+
+        if path == "/scan":
+            u = self.require_login()
+            if not u: return
+            return self.page_scan(u)
+
+        if path.startswith("/p/"):
+            u = self.require_login()
+            if not u: return
+            from urllib.parse import unquote
+            key = unquote(path.split("/", 2)[2])
+            return self.page_product_detail(u, key)
+
+        if path.startswith("/qr/"):
+            u = self.require_login()
+            if not u: return
+            code = path.split("/",2)[2]
+            return self.handle_qr_redirect(code)
+
+        if path.startswith("/products/request-edit/"):
+            u = self.require_login()
+            if not u: return
+            pid = int(path.split("/")[-1])
+            return self.page_request_edit(u, pid)
+
+        if path.startswith("/products/request-delete/"):
+            u = self.require_login()
+            if not u: return
+            pid = int(path.split("/")[-1])
+            return self.page_request_delete(u, pid)
+
+        if path == "/product-approvals":
+            u = self.require_login()
+            if not u: return
+            if u["role"] != "CEO":
+                return self.send_html(self.layout(u, "<h2>Forbidden</h2>"), 403)
+            return self.page_product_approvals(u)
+
+        if path == "/archive":
+            u = self.require_login()
+            if not u: return
+            if u["role"] != "CEO":
+                return self.send_html(self.layout(u, "<h2>Forbidden</h2>"), 403)
+            return self.page_archive(u)
+
         if path == "/reports":
             u = self.require_login()
             if not u: return
@@ -483,6 +561,35 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.handle_daily_sales(u, fields)
         if path == "/returns":
             return self.handle_returns(u, fields)
+
+        if path.startswith("/products/request-edit/"):
+            pid = int(path.split("/")[-1])
+            return self.handle_request_edit(u, pid, fields, files)
+
+        if path.startswith("/products/request-delete/"):
+            pid = int(path.split("/")[-1])
+            return self.handle_request_delete(u, pid)
+
+        if path == "/product-approvals/approve":
+            if u["role"] != "CEO":
+                return self.send_html(self.layout(u, "<h2>Forbidden</h2>"), 403)
+            return self.handle_product_approve(u, fields)
+
+        if path == "/product-approvals/reject":
+            if u["role"] != "CEO":
+                return self.send_html(self.layout(u, "<h2>Forbidden</h2>"), 403)
+            return self.handle_product_reject(u, fields)
+
+        if path == "/archive/restore":
+            if u["role"] != "CEO":
+                return self.send_html(self.layout(u, "<h2>Forbidden</h2>"), 403)
+            return self.handle_restore(u, fields)
+
+        if path == "/archive/delete-forever":
+            if u["role"] != "CEO":
+                return self.send_html(self.layout(u, "<h2>Forbidden</h2>"), 403)
+            return self.handle_delete_forever(u, fields)
+
         if path == "/approvals/approve":
             if u["role"] != "CEO":
                 return self.send_html(self.layout(u, "<h2>Forbidden</h2>"), 403)
@@ -591,9 +698,12 @@ small{color:#6b7280}
                 <div class="nav">
                   <a href="/dashboard">Dashboard</a>
                   <a href="/products">Products</a>
+                  <a href="/scan">Scan QR</a>
                   <a href="/stock/in">Stock In</a>
                   <a href="/reports">Reports</a>
-                  <a href="/approvals" class="primary">Approvals</a>
+                  <a href="/approvals" class="primary">User Approvals</a>
+                  <a href="/product-approvals">Product Requests</a>
+                  <a href="/archive">Archive</a>
                   <a href="/activity">Activity</a>
                   <a href="/logout">Logout</a>
                 </div>
@@ -603,6 +713,7 @@ small{color:#6b7280}
                 <div class="nav">
                   <a href="/dashboard">Dashboard</a>
                   <a href="/products">Products</a>
+                  <a href="/scan">Scan QR</a>
                   <a href="/sales/daily" class="primary">Daily Sales</a>
                   <a href="/returns">Returns</a>
                   <a href="/logout">Logout</a>
@@ -820,7 +931,7 @@ small{color:#6b7280}
     def page_employee_dashboard(self, u):
         # employee can see products + balances quickly
         with db() as conn:
-            products = conn.execute("SELECT * FROM products ORDER BY id DESC LIMIT 50").fetchall()
+            products = conn.execute("SELECT * FROM products WHERE is_archived=0 ORDER BY id DESC LIMIT 50").fetchall()
         rows = []
         for p in products:
             bal = product_balance(p["id"])
@@ -857,14 +968,17 @@ small{color:#6b7280}
 
     def page_products(self, u):
         with db() as conn:
-            products = conn.execute("SELECT * FROM products ORDER BY id DESC").fetchall()
+            products = conn.execute("SELECT * FROM products WHERE is_archived=0 ORDER BY id DESC").fetchall()
         cards = []
         for p in products:
             bal = product_balance(p["id"])
             img = f"<img src='/uploads/{quote(p['image_path'])}' style='width:72px;height:72px;object-fit:cover;border-radius:14px;border:1px solid #eef0f6' alt=''>" if p["image_path"] else "<div style='width:72px;height:72px;border-radius:14px;background:#eef2ff;display:flex;align-items:center;justify-content:center;font-weight:900'>DP</div>"
             low = bal <= int(p["low_stock_threshold"])
             badge = "<span class='badge low'>LOW</span>" if low else "<span class='badge ok'>OK</span>"
-            edit = f"<a class='btn light' href='/products/edit/{p['id']}'>Edit</a>" if u["role"]=="CEO" else ""
+            view = f"<a class='btn light' href='/p/{p['id']}'>Open</a>"
+            actions = (view + ' ' + (f"<a class='btn light' href='/products/edit/{p['id']}'>Edit</a>" if u['role']=='CEO' else
+                      f"<a class='btn light' href='/products/request-edit/{p['id']}'>Request Edit</a>"
+                      f" <a class='btn danger' href='/products/request-delete/{p['id']}'>Request Delete</a>"))
             cards.append(f"""
 <div class="card" style="display:flex;gap:12px;align-items:center">
   {img}
@@ -873,16 +987,16 @@ small{color:#6b7280}
       <div><b>{p['name']}</b></div>
       {badge}
     </div>
-    <div class="muted">SKU: {p['sku'] or '-'} • Low threshold: {p['low_stock_threshold']}</div>
+    <div class="muted">Code: {p['product_code'] or '-'} • SKU: {p['sku'] or '-'} • Low threshold: {p['low_stock_threshold']}</div>
   </div>
   <div style="text-align:right">
     <div class="muted">Balance</div>
     <div style="font-size:22px;font-weight:900">{bal}</div>
-    {edit}
+    {actions}
   </div>
 </div>
 """)
-        add_btn = "<a class='btn primary' href='/products/add'>Add Product</a>" if u["role"]=="CEO" else ""
+        add_btn = "<a class='btn primary' href='/products/add'>Add Product</a>"
         content = f"""
 <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
   <h2 style="margin:0">Products</h2>
@@ -895,7 +1009,7 @@ small{color:#6b7280}
         return self.send_html(self.layout(u, content, "Products"))
 
     def page_add_product(self, u):
-        if u["role"] != "CEO":
+        if u["role"] not in ("CEO","EMPLOYEE"):
             return self.send_html(self.layout(u, "<h2>Forbidden</h2>"), 403)
         content = """
 <div class="card">
@@ -919,8 +1033,8 @@ small{color:#6b7280}
         return self.send_html(self.layout(u, content, "Add Product"))
 
     def page_edit_product(self, u, pid):
-        if u["role"] != "CEO":
-            return self.send_html(self.layout(u, "<h2>Forbidden</h2>"), 403)
+        if u['role'] != 'CEO':
+            return self.send_html(self.layout(u, '<h2>Forbidden</h2>'), 403)
         with db() as conn:
             p = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
         if not p:
@@ -952,8 +1066,6 @@ small{color:#6b7280}
         return self.send_html(self.layout(u, content, "Edit Product"))
 
     def page_stock_in(self, u):
-        if u["role"] != "CEO":
-            return self.send_html(self.layout(u, "<h2>Forbidden</h2>"), 403)
         opts = self.product_options()
         content = f"""
 <div class="card">
@@ -984,7 +1096,10 @@ small{color:#6b7280}
     def page_daily_sales(self, u):
         if u["role"] not in ("CEO","EMPLOYEE"):
             return self.send_html(self.layout(u, "<h2>Forbidden</h2>"), 403)
-        opts = self.product_options()
+        from urllib.parse import urlparse, parse_qs
+        q=parse_qs(urlparse(self.path).query)
+        pref_pid = (q.get('product_id',[None])[0])
+        opts = self.product_options(pref_pid)
         content = f"""
 <div class="card">
   <h2>Record Daily Sales</h2>
@@ -1013,7 +1128,10 @@ small{color:#6b7280}
         return self.send_html(self.layout(u, content, "Daily Sales"))
 
     def page_returns(self, u):
-        opts = self.product_options()
+        from urllib.parse import urlparse, parse_qs
+        q=parse_qs(urlparse(self.path).query)
+        pref_pid = (q.get('product_id',[None])[0])
+        opts = self.product_options(pref_pid)
         content = f"""
 <div class="card">
   <h2>Record Returns</h2>
@@ -1232,14 +1350,19 @@ small{color:#6b7280}
 
         with db() as conn:
             conn.execute("""
-                INSERT INTO products(sku,name,image_path,low_stock_threshold,created_at,updated_at)
-                VALUES(?,?,?,?,?,?)
+                INSERT INTO products(sku,name,image_path,low_stock_threshold,created_at,updated_at,is_archived)
+                VALUES(?,?,?,?,?,?,0)
             """, (sku, name, image_path, low_thr, now_utc().isoformat(), now_utc().isoformat()))
             pid = conn.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
-        log_action(u["id"], "ADD_PRODUCT", {"product_id": pid, "name": name})
+            code = f"DP-{int(pid):06d}"
+            conn.execute("UPDATE products SET product_code=?, updated_at=? WHERE id=?", (code, now_utc().isoformat(), pid))
+
+        log_action(u["id"], "ADD_PRODUCT", {"product_id": pid, "name": name, "product_code": code})
         return self.redirect("/products")
 
     def handle_edit_product(self, u, pid, fields, files):
+        if u['role'] != 'CEO':
+            return self.send_html(self.layout(u, '<h2>Forbidden</h2>'), 403)
         with db() as conn:
             p = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
         if not p:
@@ -1335,14 +1458,371 @@ small{color:#6b7280}
             f.write(data)
         return safe
 
-    def product_options(self):
+
+    # ---------------------------
+    # QR Scan + Product Detail
+    # ---------------------------
+    def handle_qr_redirect(self, code: str):
+        # Use an external QR image generator (no extra Python dependencies)
+        from urllib.parse import quote
+        url = f"https://api.qrserver.com/v1/create-qr-code/?size=220x220&data={quote(code)}"
+        self.send_response(302)
+        self.send_header('Location', url)
+        self.end_headers()
+
+    def page_scan(self, u):
+        content = """
+<div class="card">
+  <h2>Scan Product QR</h2>
+  <p class="muted">Point your phone camera at a product QR. When detected, you will be redirected to the product page.</p>
+  <div style="display:grid;grid-template-columns:1fr 360px;gap:14px;align-items:start">
+    <div>
+      <video id="v" autoplay playsinline style="width:100%;border-radius:16px;border:1px solid #eef0f6;background:#000"></video>
+      <div style="margin-top:10px" class="muted">If your browser blocks camera, use the file option on your phone:</div>
+      <input id="file" type="file" accept="image/*" style="margin-top:8px">
+      <div id="msg" style="margin-top:10px;font-weight:900"></div>
+    </div>
+    <div class="card" style="margin:0">
+      <h3>How it works</h3>
+      <ol class="muted" style="line-height:1.8">
+        <li>Open this page on your phone.</li>
+        <li>Allow camera access.</li>
+        <li>Scan QR → product opens automatically.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+<script>
+const msg = (t)=>{document.getElementById('msg').textContent=t;}
+async function start(){
+  if (!('BarcodeDetector' in window)){
+    msg('BarcodeDetector not supported on this browser. Try Chrome on Android.');
+    return;
+  }
+  const det = new BarcodeDetector({formats:['qr_code']});
+  const v = document.getElementById('v');
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    v.srcObject = stream;
+  }catch(e){
+    msg('Camera permission blocked. Use the file upload below.');
+    return;
+  }
+  async function tick(){
+    try{
+      const barcodes = await det.detect(v);
+      if (barcodes && barcodes.length){
+        const code = barcodes[0].rawValue;
+        msg('Detected: '+code);
+        window.location.href = '/p/' + encodeURIComponent(code);
+        return;
+      }
+    }catch(e){}
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+start();
+
+document.getElementById('file').addEventListener('change', async (ev)=>{
+  if (!('BarcodeDetector' in window)){
+    msg('BarcodeDetector not supported.');
+    return;
+  }
+  const det = new BarcodeDetector({formats:['qr_code']});
+  const f = ev.target.files[0];
+  if(!f) return;
+  const img = new Image();
+  img.onload = async ()=>{
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img,0,0);
+    try{
+      const barcodes = await det.detect(c);
+      if (barcodes && barcodes.length){
+        const code = barcodes[0].rawValue;
+        msg('Detected: '+code);
+        window.location.href = '/p/' + encodeURIComponent(code);
+      } else {
+        msg('No QR found in that image.');
+      }
+    }catch(e){msg('Error reading QR.');}
+  };
+  img.src = URL.createObjectURL(f);
+});
+</script>
+"""
+        return self.send_html(self.layout(u, content, 'Scan QR'))
+
+    def page_product_detail(self, u, pid_or_code):
+        # pid_or_code can be numeric id or a product_code like DP-000001
+        key = str(pid_or_code)
         with db() as conn:
-            products = conn.execute("SELECT id,name FROM products ORDER BY name").fetchall()
-        return "".join([f"<option value='{p['id']}'>{html_escape(p['name'])}</option>" for p in products])
+            if key.isdigit():
+                p = conn.execute("SELECT * FROM products WHERE id=?", (int(key),)).fetchone()
+            else:
+                p = conn.execute("SELECT * FROM products WHERE product_code=?", (key,)).fetchone()
+        if not p or int(p['is_archived'] or 0) == 1:
+            return self.send_html(self.layout(u, "<h2>Product not found</h2>"), 404)
+        bal = product_balance(p['id'])
+        img = f"<img src='/uploads/{quote(p['image_path'])}' style='width:160px;height:160px;object-fit:cover;border-radius:18px;border:1px solid #eef0f6' alt=''>" if p['image_path'] else "<div style='width:160px;height:160px;border-radius:18px;background:#eef2ff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:30px'>DP</div>"
+        code = p['product_code'] or f"DP-{int(p['id']):06d}"
+        qr_img = f"<img src='/qr/{quote(code)}' style='width:220px;height:220px;border-radius:16px;border:1px solid #eef0f6;background:white' alt='QR'>"
+
+        content = f"""
+<div class='card'>
+  <div style='display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start'>
+    {img}
+    <div style='flex:1;min-width:260px'>
+      <h2 style='margin-top:0'>{html_escape(p['name'])}</h2>
+      <div class='muted'>Code: <b>{html_escape(code)}</b> • SKU: {html_escape(p['sku'] or '-') }</div>
+      <div style='margin-top:10px;font-size:18px'><b>Balance:</b> {bal}</div>
+      <div style='margin-top:14px;display:flex;gap:10px;flex-wrap:wrap'>
+        <a class='btn primary' href='/sales/daily?product_id={p['id']}'>Record Sale</a>
+        <a class='btn light' href='/returns?product_id={p['id']}'>Record Return</a>
+        <a class='btn light' href='/products'>Back to Products</a>
+      </div>
+      <div class='muted' style='margin-top:10px'>Tip: Print the QR below and attach to the product.</div>
+    </div>
+    <div>
+      {qr_img}
+      <div class='muted' style='text-align:center;margin-top:6px'>Scan QR</div>
+    </div>
+  </div>
+</div>
+"""
+        return self.send_html(self.layout(u, content, 'Product'))
+
+    # ---------------------------
+    # Product change requests (employee → CEO approval)
+    # ---------------------------
+    def page_request_edit(self, u, pid):
+        if u['role'] != 'EMPLOYEE':
+            return self.send_html(self.layout(u, '<h2>Forbidden</h2>'), 403)
+        with db() as conn:
+            p = conn.execute("SELECT * FROM products WHERE id=? AND is_archived=0", (pid,)).fetchone()
+        if not p:
+            return self.send_html(self.layout(u, '<h2>Not found</h2>'), 404)
+        img = f"<img src='/uploads/{quote(p['image_path'])}' style='width:120px;height:120px;object-fit:cover;border-radius:18px;border:1px solid #eef0f6' alt=''>" if p['image_path'] else "<div class='muted'>No image yet.</div>"
+        content = f"""
+<div class='card'>
+  <h2>Request Edit</h2>
+  <p class='muted'>CEO must approve before changes apply.</p>
+  <div style='display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px'>
+    {img}
+    <div class='muted'>You can propose a new image too.</div>
+  </div>
+  <form method='POST' action='/products/request-edit/{pid}' enctype='multipart/form-data'>
+    <div class='row'>
+      <div><label>Name</label><input name='name' value='{html_escape(p['name'])}' required></div>
+      <div><label>SKU</label><input name='sku' value='{html_escape(p['sku'] or '')}'></div>
+    </div>
+    <div class='row' style='margin-top:10px'>
+      <div><label>Low stock threshold</label><input name='low_stock_threshold' type='number' min='0' value='{int(p['low_stock_threshold'])}'></div>
+      <div><label>New image (optional)</label><input type='file' name='image' accept='image/*'></div>
+    </div>
+    <div style='margin-top:12px'>
+      <button class='btn primary' type='submit'>Submit Request</button>
+      <a class='btn light' href='/products'>Cancel</a>
+    </div>
+  </form>
+</div>
+"""
+        return self.send_html(self.layout(u, content, 'Request Edit'))
+
+    def page_request_delete(self, u, pid):
+        if u['role'] != 'EMPLOYEE':
+            return self.send_html(self.layout(u, '<h2>Forbidden</h2>'), 403)
+        with db() as conn:
+            p = conn.execute("SELECT * FROM products WHERE id=? AND is_archived=0", (pid,)).fetchone()
+        if not p:
+            return self.send_html(self.layout(u, '<h2>Not found</h2>'), 404)
+        content = f"""
+<div class='card'>
+  <h2>Request Delete</h2>
+  <p class='muted'>Delete means <b>Archive</b>. CEO can restore or delete forever.</p>
+  <p><b>{html_escape(p['name'])}</b> — Code: {html_escape(p['product_code'] or '-')}</p>
+  <form method='POST' action='/products/request-delete/{pid}'>
+    <button class='btn danger' type='submit'>Submit Delete Request</button>
+    <a class='btn light' href='/products'>Cancel</a>
+  </form>
+</div>
+"""
+        return self.send_html(self.layout(u, content, 'Request Delete'))
+
+    def handle_request_edit(self, u, pid, fields, files):
+        if u['role'] != 'EMPLOYEE':
+            return self.send_html(self.layout(u, '<h2>Forbidden</h2>'), 403)
+        name = (fields.get('name') or '').strip()
+        sku = (fields.get('sku') or '').strip() or None
+        low_thr = int(fields.get('low_stock_threshold') or 0)
+        proposed = {'name': name, 'sku': sku, 'low_stock_threshold': low_thr}
+        if 'image' in files and files['image']['data']:
+            # store proposed image; CEO approval will apply it
+            proposed['image_path'] = self.save_upload(files['image']['filename'], files['image']['data'])
+        import json
+        with db() as conn:
+            conn.execute("""
+              INSERT INTO product_change_requests(product_id,requested_by,change_type,proposed_data,status,created_at)
+              VALUES(?,?,?,?,?,?)
+            """, (pid, u['id'], 'EDIT', json.dumps(proposed), 'PENDING', now_utc().isoformat()))
+        log_action(u['id'], 'REQUEST_EDIT_PRODUCT', {'product_id': pid})
+        return self.redirect('/products')
+
+    def handle_request_delete(self, u, pid):
+        if u['role'] != 'EMPLOYEE':
+            return self.send_html(self.layout(u, '<h2>Forbidden</h2>'), 403)
+        with db() as conn:
+            conn.execute("""
+              INSERT INTO product_change_requests(product_id,requested_by,change_type,proposed_data,status,created_at)
+              VALUES(?,?,?,?,?,?)
+            """, (pid, u['id'], 'DELETE', None, 'PENDING', now_utc().isoformat()))
+        log_action(u['id'], 'REQUEST_DELETE_PRODUCT', {'product_id': pid})
+        return self.redirect('/products')
+
+    def page_product_approvals(self, u):
+        with db() as conn:
+            reqs = conn.execute("""
+              SELECT r.*, p.name as product_name, p.product_code, u.username as requested_by_name
+              FROM product_change_requests r
+              LEFT JOIN products p ON p.id=r.product_id
+              LEFT JOIN users u ON u.id=r.requested_by
+              WHERE r.status='PENDING'
+              ORDER BY r.created_at DESC
+            """).fetchall()
+        rows=[]
+        for r in reqs:
+            ct = r['change_type']
+            rows.append(f"""
+<tr>
+  <td><b>{html_escape(r['product_name'] or 'Unknown')}</b><div class='muted'>{html_escape(r['product_code'] or '-')}</div></td>
+  <td>{html_escape(r['requested_by_name'] or '-')}</td>
+  <td>{ct}</td>
+  <td class='muted'>{html_escape((r['created_at'] or '')[:19])}</td>
+  <td>
+    <form method='POST' action='/product-approvals/approve' style='display:inline'>
+      <input type='hidden' name='request_id' value='{r['id']}'>
+      <button class='btn primary' type='submit'>Approve</button>
+    </form>
+    <form method='POST' action='/product-approvals/reject' style='display:inline;margin-left:6px'>
+      <input type='hidden' name='request_id' value='{r['id']}'>
+      <button class='btn danger' type='submit'>Reject</button>
+    </form>
+  </td>
+</tr>
+""")
+        content = f"""
+<div class='card'>
+  <h2>Product Requests</h2>
+  <p class='muted'>Employee edit/delete requests. Delete means Archive.</p>
+  <table>
+    <thead><tr><th>Product</th><th>Employee</th><th>Type</th><th>When</th><th>Action</th></tr></thead>
+    <tbody>{''.join(rows) if rows else '<tr><td colspan=5 class=muted>No pending requests.</td></tr>'}</tbody>
+  </table>
+</div>
+"""
+        return self.send_html(self.layout(u, content, 'Product Requests'))
+
+    def handle_product_approve(self, u, fields):
+        rid = int(fields.get('request_id') or 0)
+        import json
+        with db() as conn:
+            r = conn.execute("SELECT * FROM product_change_requests WHERE id=?", (rid,)).fetchone()
+            if not r or r['status'] != 'PENDING':
+                return self.redirect('/product-approvals')
+            pid = int(r['product_id'])
+            if r['change_type'] == 'EDIT':
+                data = json.loads(r['proposed_data'] or '{}')
+                # apply edits
+                conn.execute("""
+                  UPDATE products SET name=?, sku=?, low_stock_threshold=?, image_path=COALESCE(?, image_path), updated_at=?
+                  WHERE id=?
+                """, (
+                    data.get('name'),
+                    data.get('sku'),
+                    int(data.get('low_stock_threshold') or 0),
+                    data.get('image_path'),
+                    now_utc().isoformat(),
+                    pid
+                ))
+            else:
+                # DELETE => ARCHIVE
+                conn.execute("UPDATE products SET is_archived=1, updated_at=? WHERE id=?", (now_utc().isoformat(), pid))
+            conn.execute("""
+              UPDATE product_change_requests SET status='APPROVED', reviewed_by=?, reviewed_at=? WHERE id=?
+            """, (u['id'], now_utc().isoformat(), rid))
+        log_action(u['id'], 'APPROVE_PRODUCT_REQUEST', {'request_id': rid})
+        return self.redirect('/product-approvals')
+
+    def handle_product_reject(self, u, fields):
+        rid = int(fields.get('request_id') or 0)
+        with db() as conn:
+            conn.execute("""
+              UPDATE product_change_requests SET status='REJECTED', reviewed_by=?, reviewed_at=? WHERE id=? AND status='PENDING'
+            """, (u['id'], now_utc().isoformat(), rid))
+        log_action(u['id'], 'REJECT_PRODUCT_REQUEST', {'request_id': rid})
+        return self.redirect('/product-approvals')
+
+    # ---------------------------
+    # Archive (CEO only)
+    # ---------------------------
+    def page_archive(self, u):
+        with db() as conn:
+            products = conn.execute("SELECT * FROM products WHERE is_archived=1 ORDER BY updated_at DESC").fetchall()
+        rows=[]
+        for p in products:
+            rows.append(f"""
+<tr>
+  <td><b>{html_escape(p['name'])}</b><div class='muted'>{html_escape(p['product_code'] or '-')}</div></td>
+  <td>{product_balance(p['id'])}</td>
+  <td class='muted'>{html_escape((p['updated_at'] or '')[:19])}</td>
+  <td>
+    <form method='POST' action='/archive/restore' style='display:inline'>
+      <input type='hidden' name='product_id' value='{p['id']}'>
+      <button class='btn primary' type='submit'>Restore</button>
+    </form>
+    <form method='POST' action='/archive/delete-forever' style='display:inline;margin-left:6px' onsubmit="return confirm('Delete forever? This cannot be undone.')">
+      <input type='hidden' name='product_id' value='{p['id']}'>
+      <button class='btn danger' type='submit'>Delete Forever</button>
+    </form>
+  </td>
+</tr>
+""")
+        content=f"""
+<div class='card'>
+  <h2>Archive</h2>
+  <p class='muted'>Only CEO can see archived products. You can restore or permanently delete.</p>
+  <table>
+    <thead><tr><th>Product</th><th>Balance</th><th>Archived At</th><th>Actions</th></tr></thead>
+    <tbody>{''.join(rows) if rows else '<tr><td colspan=4 class=muted>No archived products.</td></tr>'}</tbody>
+  </table>
+</div>
+"""
+        return self.send_html(self.layout(u, content, 'Archive'))
+
+    def handle_restore(self, u, fields):
+        pid = int(fields.get('product_id') or 0)
+        with db() as conn:
+            conn.execute("UPDATE products SET is_archived=0, updated_at=? WHERE id=?", (now_utc().isoformat(), pid))
+        log_action(u['id'], 'RESTORE_PRODUCT', {'product_id': pid})
+        return self.redirect('/archive')
+
+    def handle_delete_forever(self, u, fields):
+        pid = int(fields.get('product_id') or 0)
+        with db() as conn:
+            conn.execute("DELETE FROM products WHERE id=?", (pid,))
+        log_action(u['id'], 'DELETE_PRODUCT_FOREVER', {'product_id': pid})
+        return self.redirect('/archive')
+
+    def product_options(self, selected_id=None):
+        with db() as conn:
+            products = conn.execute("SELECT id,name FROM products WHERE is_archived=0 ORDER BY name").fetchall()
+        return "".join([f"<option value='{p['id']}' {'selected' if selected_id and int(selected_id)==int(p['id']) else ''}>{html_escape(p['name'])}</option>" for p in products])
 
     def compute_alerts(self):
         with db() as conn:
-            products = conn.execute("SELECT * FROM products").fetchall()
+            products = conn.execute("SELECT * FROM products WHERE is_archived=0").fetchall()
         low=[]
         slow=[]
         cutoff = today_local() - dt.timedelta(days=30)
