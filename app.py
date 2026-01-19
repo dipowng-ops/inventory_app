@@ -791,19 +791,19 @@ small{color:#6b7280}
   <div class="footer">© {now_utc().year} Dipower Stores</div>
 
 <script>
-function toggleMenu(){
+function toggleMenu(){{
   const nav = document.querySelector('.nav');
   if(!nav) return;
   nav.style.display = (nav.style.display === 'flex') ? 'none' : 'flex';
-}
-document.addEventListener('click', function(e){
+}}
+document.addEventListener('click', function(e){{
   const nav = document.querySelector('.nav');
   const btn = document.querySelector('.menu-toggle');
   if(!nav || !btn) return;
-  if(nav.style.display === 'flex' && !nav.contains(e.target) && !btn.contains(e.target)){
+  if(nav.style.display === 'flex' && !nav.contains(e.target) && !btn.contains(e.target)){{
     nav.style.display = 'none';
-  }
-});
+  }}
+}});
 </script>
 
 </body></html>
@@ -811,24 +811,21 @@ document.addEventListener('click', function(e){
         return html
 
     def simple_page(self, title, body_html):
-        return f"<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>{title}</title>{self.styles()}</head><body><div class='container'>{body_html}</div>
-<script>
-function toggleMenu(){
-  const nav = document.querySelector('.nav');
-  if(!nav) return;
-  nav.style.display = (nav.style.display === 'flex') ? 'none' : 'flex';
-}
-document.addEventListener('click', function(e){
-  const nav = document.querySelector('.nav');
-  const btn = document.querySelector('.menu-toggle');
-  if(!nav || !btn) return;
-  if(nav.style.display === 'flex' && !nav.contains(e.target) && !btn.contains(e.target)){
-    nav.style.display = 'none';
-  }
-});
-</script>
-
-</body></html>"
+        # Simple pages like login/register; no topbar/nav needed here.
+        return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{self.h(title)} - Dipower Stores</title>
+  {self.styles()}
+</head>
+<body>
+  <div class="container">
+    {body_html}
+  </div>
+</body>
+</html>"""
 
     def page_home(self, user):
         # HTML5 video placeholder: user can upload static/welcome.mp4 later
@@ -1904,6 +1901,7 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
             bal = product_balance(p["id"])
             badge = ""
             if show_alert:
+                pass
             last_sale = product_last_sale_date(p["id"])
             last_sale_txt = last_sale.isoformat() if last_sale else "Never"
             rows.append(f"<tr><td><b>{html_escape(p['name'])}</b><div class='muted'>SKU: {html_escape(p['sku'] or '-')}</div></td><td>{bal}</td><td>{last_sale_txt if show_last_sale else ''}</td></tr>")
