@@ -9,7 +9,7 @@ Features
   - Employee: daily sales & returns entry + view stock balances.
 - Products with images (upload), stock-in, daily sales, returns -> auto updates stock balance.
 - Alerts:
-  - Low stock threshold per product
+  - threshold per product
   - Slow movers (no sales in X days)
 - Reports:
   - Weekly + Monthly totals (Jan–Dec months)
@@ -676,7 +676,6 @@ table{width:100%;border-collapse:collapse}
 th,td{padding:10px;border-bottom:1px solid #eef0f6;text-align:left;vertical-align:top}
 th{font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em}
 .badge{display:inline-block;padding:4px 10px;border-radius:999px;font-weight:900;font-size:12px}
-.badge.low{background:#fff1f2;color:#b91c1c;border:1px solid #fecdd3}
 .badge.ok{background:#ecfdf5;color:#047857;border:1px solid #bbf7d0}
 .badge.pending{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
 form .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -687,6 +686,47 @@ input,select{
 label{font-size:13px;font-weight:800;color:#374151}
 small{color:#6b7280}
 .footer{padding:18px;text-align:center;color:#6b7280}
+
+/* --- Mobile Hamburger Menu --- */
+.menu-toggle{
+  display:none;
+  width:44px;height:44px;
+  border:1px solid #e5e7eb;border-radius:12px;
+  background:#fff;
+  cursor:pointer;
+  align-items:center;justify-content:center;
+  font-weight:900;font-size:20px;
+}
+@media (max-width:768px){
+  .topbar{position:sticky;top:0;z-index:50;position:relative}
+  .menu-toggle{display:inline-flex}
+  .nav{
+    display:none;
+    position:absolute;
+    top:72px;
+    right:12px;left:12px;
+    background:#fff;
+    border:1px solid #e5e7eb;
+    border-radius:16px;
+    padding:12px;
+    box-shadow:0 18px 40px rgba(0,0,0,.15);
+    z-index:999;
+    flex-direction:column;
+    gap:10px;
+  }
+  .nav a{
+    margin-left:0 !important;
+    display:block;
+    text-align:center;
+    padding:12px 14px !important;
+    border-radius:12px;
+    font-weight:800;
+  }
+}
+
+
+.table-wrap{overflow-x:auto;border-radius:12px}
+@media (max-width:768px){table{min-width:650px}}
 </style>
 """
 
@@ -742,18 +782,53 @@ small{color:#6b7280}
         <div class="tag">Inventory • Sales • Returns • Stock Control</div>
       </div>
     </div>
+    <button class="menu-toggle" onclick="toggleMenu()" aria-label="Open menu">☰</button>
     {nav}
   </div>
   <div class="container">
     {content_html}
   </div>
   <div class="footer">© {now_utc().year} Dipower Stores</div>
+
+<script>
+function toggleMenu(){
+  const nav = document.querySelector('.nav');
+  if(!nav) return;
+  nav.style.display = (nav.style.display === 'flex') ? 'none' : 'flex';
+}
+document.addEventListener('click', function(e){
+  const nav = document.querySelector('.nav');
+  const btn = document.querySelector('.menu-toggle');
+  if(!nav || !btn) return;
+  if(nav.style.display === 'flex' && !nav.contains(e.target) && !btn.contains(e.target)){
+    nav.style.display = 'none';
+  }
+});
+</script>
+
 </body></html>
 """
         return html
 
     def simple_page(self, title, body_html):
-        return f"<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>{title}</title>{self.styles()}</head><body><div class='container'>{body_html}</div></body></html>"
+        return f"<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>{title}</title>{self.styles()}</head><body><div class='container'>{body_html}</div>
+<script>
+function toggleMenu(){
+  const nav = document.querySelector('.nav');
+  if(!nav) return;
+  nav.style.display = (nav.style.display === 'flex') ? 'none' : 'flex';
+}
+document.addEventListener('click', function(e){
+  const nav = document.querySelector('.nav');
+  const btn = document.querySelector('.menu-toggle');
+  if(!nav || !btn) return;
+  if(nav.style.display === 'flex' && !nav.contains(e.target) && !btn.contains(e.target)){
+    nav.style.display = 'none';
+  }
+});
+</script>
+
+</body></html>"
 
     def page_home(self, user):
         # HTML5 video placeholder: user can upload static/welcome.mp4 later
@@ -868,7 +943,7 @@ small{color:#6b7280}
         return self.send_html(self.layout(None, content, "Reset"))
 
     def page_ceo_dashboard(self, u):
-        # Alerts: low stock + slow movers
+        # Alerts:  + slow movers
         low, slow = self.compute_alerts()
         today = today_local()
         wstart = start_of_week(today)
@@ -891,12 +966,7 @@ small{color:#6b7280}
     <p><b>Sales:</b> ₦{sales_w:,}</p>
     <p><b>Returns:</b> ₦{returns_w:,}</p>
   </div>
-  <div class="card">
-    <h3>Alerts</h3>
-    <p><span class="badge low">{len(low)} Low stock</span></p>
-    <p><span class="badge pending">{len(slow)} Slow movers</span></p>
-    <div class="muted">See below for details.</div>
-  </div>
+  
   <div class="card">
     <h3>Access Control</h3>
     <p class="muted">Only you (CEO) can approve employee accounts.</p>
@@ -935,8 +1005,7 @@ small{color:#6b7280}
         rows = []
         for p in products:
             bal = product_balance(p["id"])
-            badge = "<span class='badge low'>LOW</span>" if bal <= int(p["low_stock_threshold"]) else "<span class='badge ok'>OK</span>"
-            rows.append(f"<tr><td>{badge}</td><td><b>{p['name']}</b><div class='muted'>SKU: {p['sku'] or '-'}</div></td><td>{bal}</td></tr>")
+            rows.append(f"<tr><td><b>{p['name']}</b><div class='muted'>SKU: {p['sku'] or '-'}</div></td><td>{bal}</td></tr>")
         content = f"""
 <div class="grid">
   <div class="card">
@@ -973,8 +1042,6 @@ small{color:#6b7280}
         for p in products:
             bal = product_balance(p["id"])
             img = f"<img src='/uploads/{quote(p['image_path'])}' style='width:72px;height:72px;object-fit:cover;border-radius:14px;border:1px solid #eef0f6' alt=''>" if p["image_path"] else "<div style='width:72px;height:72px;border-radius:14px;background:#eef2ff;display:flex;align-items:center;justify-content:center;font-weight:900'>DP</div>"
-            low = bal <= int(p["low_stock_threshold"])
-            badge = "<span class='badge low'>LOW</span>" if low else "<span class='badge ok'>OK</span>"
             view = f"<a class='btn light' href='/p/{p['id']}'>Open</a>"
             actions = (view + ' ' + (f"<a class='btn light' href='/products/edit/{p['id']}'>Edit</a>" if u['role']=='CEO' else
                       f"<a class='btn light' href='/products/request-edit/{p['id']}'>Request Edit</a>"
@@ -985,9 +1052,8 @@ small{color:#6b7280}
   <div style="flex:1">
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <div><b>{p['name']}</b></div>
-      {badge}
     </div>
-    <div class="muted">Code: {p['product_code'] or '-'} • SKU: {p['sku'] or '-'} • Low threshold: {p['low_stock_threshold']}</div>
+    <div class="muted">Code: {p['product_code'] or '-'} • SKU: {p['sku'] or '-'}</div>
   </div>
   <div style="text-align:right">
     <div class="muted">Balance</div>
@@ -1020,7 +1086,6 @@ small{color:#6b7280}
       <div><label>SKU (optional)</label><input name="sku"></div>
     </div>
     <div class="row" style="margin-top:10px">
-      <div><label>Low stock threshold</label><input name="low_stock_threshold" type="number" min="0" value="5"></div>
       <div><label>Product image (optional)</label><input type="file" name="image" accept="image/*"></div>
     </div>
     <div style="margin-top:12px">
@@ -1053,7 +1118,6 @@ small{color:#6b7280}
       <div><label>SKU (optional)</label><input name="sku" value="{html_escape(p['sku'] or '')}"></div>
     </div>
     <div class="row" style="margin-top:10px">
-      <div><label>Low stock threshold</label><input name="low_stock_threshold" type="number" min="0" value="{p['low_stock_threshold']}"></div>
       <div><label>New image (optional)</label><input type="file" name="image" accept="image/*"></div>
     </div>
     <div style="margin-top:12px">
@@ -1619,7 +1683,6 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
       <div><label>SKU</label><input name='sku' value='{html_escape(p['sku'] or '')}'></div>
     </div>
     <div class='row' style='margin-top:10px'>
-      <div><label>Low stock threshold</label><input name='low_stock_threshold' type='number' min='0' value='{int(p['low_stock_threshold'])}'></div>
       <div><label>New image (optional)</label><input type='file' name='image' accept='image/*'></div>
     </div>
     <div style='margin-top:12px'>
@@ -1833,7 +1896,7 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
             last_sale = product_last_sale_date(p["id"])
             if last_sale is None or last_sale < cutoff:
                 slow.append(p)
-        return low, slow
+        return [], slow
 
     def table_products(self, products, show_alert=False, show_last_sale=False):
         rows=[]
@@ -1841,16 +1904,15 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
             bal = product_balance(p["id"])
             badge = ""
             if show_alert:
-                badge = "<span class='badge low'>LOW</span>" if bal <= int(p["low_stock_threshold"]) else "<span class='badge ok'>OK</span>"
             last_sale = product_last_sale_date(p["id"])
             last_sale_txt = last_sale.isoformat() if last_sale else "Never"
-            rows.append(f"<tr><td><b>{html_escape(p['name'])}</b><div class='muted'>SKU: {html_escape(p['sku'] or '-')}</div></td><td>{bal}</td><td>{badge}</td><td>{last_sale_txt if show_last_sale else ''}</td></tr>")
+            rows.append(f"<tr><td><b>{html_escape(p['name'])}</b><div class='muted'>SKU: {html_escape(p['sku'] or '-')}</div></td><td>{bal}</td><td>{last_sale_txt if show_last_sale else ''}</td></tr>")
         if not rows:
             return "<p class='muted'>None</p>"
         head_extra = "<th>Last Sale</th>" if show_last_sale else "<th></th>"
         return f"""
 <table>
-  <thead><tr><th>Product</th><th>Balance</th><th>Alert</th>{head_extra}</tr></thead>
+  <thead><tr><th>Product</th><th>Balance</th>{head_extra}</tr></thead>
   <tbody>{''.join(rows)}</tbody>
 </table>
 """
