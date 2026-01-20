@@ -1,1 +1,0 @@
-Optional: add a short MP4 named welcome.mp4 into this static folder to show a welcome video on the home page.
