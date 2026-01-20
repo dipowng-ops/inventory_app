@@ -9,7 +9,7 @@ Features
   - Employee: daily sales & returns entry + view stock balances.
 - Products with images (upload), stock-in, daily sales, returns -> auto updates stock balance.
 - Alerts:
-  - threshold per product
+  - Low stock threshold per product
   - Slow movers (no sales in X days)
 - Reports:
   - Weekly + Monthly totals (Jan–Dec months)
@@ -676,6 +676,7 @@ table{width:100%;border-collapse:collapse}
 th,td{padding:10px;border-bottom:1px solid #eef0f6;text-align:left;vertical-align:top}
 th{font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em}
 .badge{display:inline-block;padding:4px 10px;border-radius:999px;font-weight:900;font-size:12px}
+.badge.low{background:#fff1f2;color:#b91c1c;border:1px solid #fecdd3}
 .badge.ok{background:#ecfdf5;color:#047857;border:1px solid #bbf7d0}
 .badge.pending{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
 form .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -686,72 +687,6 @@ input,select{
 label{font-size:13px;font-weight:800;color:#374151}
 small{color:#6b7280}
 .footer{padding:18px;text-align:center;color:#6b7280}
-
-/* --- Mobile Hamburger Menu --- */
-.menu-toggle{
-  display:none;
-  width:44px;height:44px;
-  border:1px solid #e5e7eb;border-radius:12px;
-  background:#fff;
-  cursor:pointer;
-  align-items:center;justify-content:center;
-  font-weight:900;font-size:20px;
-}
-@media (max-width:768px){
-  .topbar{position:sticky;top:0;z-index:50;position:relative}
-  .menu-toggle{display:inline-flex}
-  .nav{
-    display:none;
-    position:absolute;
-    top:72px;
-    right:12px;left:12px;
-    background:#fff;
-    border:1px solid #e5e7eb;
-    border-radius:16px;
-    padding:12px;
-    box-shadow:0 18px 40px rgba(0,0,0,.15);
-    z-index:999;
-    flex-direction:column;
-    gap:10px;
-  }
-  .nav a{
-    margin-left:0 !important;
-    display:block;
-    text-align:center;
-    padding:12px 14px !important;
-    border-radius:12px;
-    font-weight:800;
-  }
-}
-
-
-.table-wrap{overflow-x:auto;border-radius:12px}
-@media (max-width:768px){table{min-width:650px}}
-
-/* --- Sidebar Layout (Desktop) --- */
-.app-shell{{display:flex;min-height:100vh}}
-.sidebar{{width:260px;background:#fff;border-right:1px solid #e5e7eb;padding:16px;position:sticky;top:0;height:100vh;overflow:auto}}
-.sidebar-brand{{display:flex;gap:10px;align-items:center;margin-bottom:16px}}
-.side-logo{{width:42px;height:42px;border-radius:12px;object-fit:cover;border:1px solid #e5e7eb;background:#f1f5f9}}
-.side-title{{font-weight:900;font-size:16px;line-height:1.1}}
-.side-sub{{font-size:12px;color:#64748b;margin-top:2px}}
-.nav{{display:flex;flex-direction:column;gap:10px}}
-.nav a{{padding:12px 12px;border-radius:12px;font-weight:800;background:#f8fafc;margin-left:0;display:block;text-align:left}}
-.nav a:hover{{background:#eef2ff}}
-.main{{flex:1;background:#f6f7fb}}
-.content{{max-width:1100px;margin:0 auto;padding:18px}}
-
-/* Mobile: slide-in sidebar */
-.mobile-menu-btn{{display:none;position:fixed;top:12px;left:12px;z-index:1100;width:44px;height:44px;border-radius:12px;border:1px solid #e5e7eb;background:#fff;font-size:22px;font-weight:900}}
-.backdrop{{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:1050}}
-@media (max-width:900px){{
-  .mobile-menu-btn{{display:block}}
-  .sidebar{{position:fixed;left:-280px;transition:left .2s ease;z-index:1200}}
-  .sidebar.open{{left:0}}
-  .backdrop.show{{display:block}}
-  .content{{padding-top:70px}}
-}}
-
 </style>
 """
 
@@ -799,61 +734,26 @@ small{color:#6b7280}
 {self.styles()}
 </head>
 <body>
-
-<button class="mobile-menu-btn" onclick="toggleSidebar()" aria-label="Open menu">☰</button>
-<div class="backdrop" onclick="toggleSidebar(true)"></div>
-
-<div class="app-shell">
-  <aside class="sidebar">
-    <div class="sidebar-brand">
-      <img class="side-logo" src="/static/logo.png" alt="Dipower">
+  <div class="topbar">
+    <div class="brand">
+      <img src="/static/logo.svg" alt="Dipower logo">
       <div>
-        <div class="side-title">Dipower Stores</div>
-        <div class="side-sub">Inventory • Sales • Returns</div>
+        <div class="name">{APP_NAME}</div>
+        <div class="tag">Inventory • Sales • Returns • Stock Control</div>
       </div>
     </div>
-    {{nav}}
-  </aside>
-
-  <main class="main">
-    <div class="content">
-      {{flash_html}}
-      {{content_html}}
-    </div>
-  </main>
-</div>
-
-<script>
-function toggleSidebar(forceClose){{
-  const sb = document.querySelector('.sidebar');
-  const bd = document.querySelector('.backdrop');
-  if(!sb || !bd) return;
-  if(forceClose){{ sb.classList.remove('open'); bd.classList.remove('show'); return; }}
-  const open = sb.classList.toggle('open');
-  if(open) bd.classList.add('show'); else bd.classList.remove('show');
-}}
-</script>
-
+    {nav}
+  </div>
+  <div class="container">
+    {content_html}
+  </div>
+  <div class="footer">© {now_utc().year} Dipower Stores</div>
 </body></html>
 """
         return html
 
     def simple_page(self, title, body_html):
-        # Simple pages like login/register; no topbar/nav needed here.
-        return f"""<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{self.h(title)} - Dipower Stores</title>
-  {self.styles()}
-</head>
-<body>
-  <div class="container">
-    {body_html}
-  </div>
-</body>
-</html>"""
+        return f"<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>{title}</title>{self.styles()}</head><body><div class='container'>{body_html}</div></body></html>"
 
     def page_home(self, user):
         # HTML5 video placeholder: user can upload static/welcome.mp4 later
@@ -968,7 +868,7 @@ function toggleSidebar(forceClose){{
         return self.send_html(self.layout(None, content, "Reset"))
 
     def page_ceo_dashboard(self, u):
-        # Alerts:  + slow movers
+        # Alerts: low stock + slow movers
         low, slow = self.compute_alerts()
         today = today_local()
         wstart = start_of_week(today)
@@ -991,7 +891,12 @@ function toggleSidebar(forceClose){{
     <p><b>Sales:</b> ₦{sales_w:,}</p>
     <p><b>Returns:</b> ₦{returns_w:,}</p>
   </div>
-  
+  <div class="card">
+    <h3>Alerts</h3>
+    <p><span class="badge low">{len(low)} Low stock</span></p>
+    <p><span class="badge pending">{len(slow)} Slow movers</span></p>
+    <div class="muted">See below for details.</div>
+  </div>
   <div class="card">
     <h3>Access Control</h3>
     <p class="muted">Only you (CEO) can approve employee accounts.</p>
@@ -1030,7 +935,8 @@ function toggleSidebar(forceClose){{
         rows = []
         for p in products:
             bal = product_balance(p["id"])
-            rows.append(f"<tr><td><b>{p['name']}</b><div class='muted'></div></td><td>{bal}</td></tr>")
+            badge = "<span class='badge low'>LOW</span>" if bal <= int(p["low_stock_threshold"]) else "<span class='badge ok'>OK</span>"
+            rows.append(f"<tr><td>{badge}</td><td><b>{p['name']}</b><div class='muted'>SKU: {p['sku'] or '-'}</div></td><td>{bal}</td></tr>")
         content = f"""
 <div class="grid">
   <div class="card">
@@ -1042,15 +948,15 @@ function toggleSidebar(forceClose){{
     </div>
   </div>
   <div class="card">
-    <h3>Stock Quantity</h3>
+    <h3>Stock Balance</h3>
     <p class="muted">Quick view of current balances.</p>
   </div>
 </div>
 
 <div class="card" style="margin-top:14px">
-  <h3>Products & Quantitys</h3>
+  <h3>Products & Balances</h3>
   <table>
-    <thead><tr><th>Status</th><th>Product</th><th>Quantity</th></tr></thead>
+    <thead><tr><th>Status</th><th>Product</th><th>Balance</th></tr></thead>
     <tbody>
       {''.join(rows) if rows else "<tr><td colspan='3' class='muted'>No products yet. Ask CEO to add products.</td></tr>"}
     </tbody>
@@ -1067,6 +973,8 @@ function toggleSidebar(forceClose){{
         for p in products:
             bal = product_balance(p["id"])
             img = f"<img src='/uploads/{quote(p['image_path'])}' style='width:72px;height:72px;object-fit:cover;border-radius:14px;border:1px solid #eef0f6' alt=''>" if p["image_path"] else "<div style='width:72px;height:72px;border-radius:14px;background:#eef2ff;display:flex;align-items:center;justify-content:center;font-weight:900'>DP</div>"
+            low = bal <= int(p["low_stock_threshold"])
+            badge = "<span class='badge low'>LOW</span>" if low else "<span class='badge ok'>OK</span>"
             view = f"<a class='btn light' href='/p/{p['id']}'>Open</a>"
             actions = (view + ' ' + (f"<a class='btn light' href='/products/edit/{p['id']}'>Edit</a>" if u['role']=='CEO' else
                       f"<a class='btn light' href='/products/request-edit/{p['id']}'>Request Edit</a>"
@@ -1077,11 +985,12 @@ function toggleSidebar(forceClose){{
   <div style="flex:1">
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <div><b>{p['name']}</b></div>
+      {badge}
     </div>
-    <div class="muted">Code: {p['product_code'] or '-'} • </div>
+    <div class="muted">Code: {p['product_code'] or '-'} • SKU: {p['sku'] or '-'} • Low threshold: {p['low_stock_threshold']}</div>
   </div>
   <div style="text-align:right">
-    <div class="muted">Quantity</div>
+    <div class="muted">Balance</div>
     <div style="font-size:22px;font-weight:900">{bal}</div>
     {actions}
   </div>
@@ -1108,8 +1017,10 @@ function toggleSidebar(forceClose){{
   <form method="POST" action="/products/add" enctype="multipart/form-data">
     <div class="row">
       <div><label>Product name</label><input name="name" required></div>
-      </div>
+      <div><label>SKU (optional)</label><input name="sku"></div>
+    </div>
     <div class="row" style="margin-top:10px">
+      <div><label>Low stock threshold</label><input name="low_stock_threshold" type="number" min="0" value="5"></div>
       <div><label>Product image (optional)</label><input type="file" name="image" accept="image/*"></div>
     </div>
     <div style="margin-top:12px">
@@ -1139,8 +1050,10 @@ function toggleSidebar(forceClose){{
   <form method="POST" action="/products/edit/{pid}" enctype="multipart/form-data">
     <div class="row">
       <div><label>Product name</label><input name="name" value="{html_escape(p['name'])}" required></div>
-      </div>
+      <div><label>SKU (optional)</label><input name="sku" value="{html_escape(p['sku'] or '')}"></div>
+    </div>
     <div class="row" style="margin-top:10px">
+      <div><label>Low stock threshold</label><input name="low_stock_threshold" type="number" min="0" value="{p['low_stock_threshold']}"></div>
       <div><label>New image (optional)</label><input type="file" name="image" accept="image/*"></div>
     </div>
     <div style="margin-top:12px">
@@ -1663,8 +1576,8 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
     {img}
     <div style='flex:1;min-width:260px'>
       <h2 style='margin-top:0'>{html_escape(p['name'])}</h2>
-      <div class='muted'>Code: <b>{html_escape(code)}</b> • </div>
-      <div style='margin-top:10px;font-size:18px'><b>Quantity:</b> {bal}</div>
+      <div class='muted'>Code: <b>{html_escape(code)}</b> • SKU: {html_escape(p['sku'] or '-') }</div>
+      <div style='margin-top:10px;font-size:18px'><b>Balance:</b> {bal}</div>
       <div style='margin-top:14px;display:flex;gap:10px;flex-wrap:wrap'>
         <a class='btn primary' href='/sales/daily?product_id={p['id']}'>Record Sale</a>
         <a class='btn light' href='/returns?product_id={p['id']}'>Record Return</a>
@@ -1703,8 +1616,10 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
   <form method='POST' action='/products/request-edit/{pid}' enctype='multipart/form-data'>
     <div class='row'>
       <div><label>Name</label><input name='name' value='{html_escape(p['name'])}' required></div>
-      </div>
+      <div><label>SKU</label><input name='sku' value='{html_escape(p['sku'] or '')}'></div>
+    </div>
     <div class='row' style='margin-top:10px'>
+      <div><label>Low stock threshold</label><input name='low_stock_threshold' type='number' min='0' value='{int(p['low_stock_threshold'])}'></div>
       <div><label>New image (optional)</label><input type='file' name='image' accept='image/*'></div>
     </div>
     <div style='margin-top:12px'>
@@ -1879,7 +1794,7 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
   <h2>Archive</h2>
   <p class='muted'>Only CEO can see archived products. You can restore or permanently delete.</p>
   <table>
-    <thead><tr><th>Product</th><th>Quantity</th><th>Archived At</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Product</th><th>Balance</th><th>Archived At</th><th>Actions</th></tr></thead>
     <tbody>{''.join(rows) if rows else '<tr><td colspan=4 class=muted>No archived products.</td></tr>'}</tbody>
   </table>
 </div>
@@ -1918,7 +1833,7 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
             last_sale = product_last_sale_date(p["id"])
             if last_sale is None or last_sale < cutoff:
                 slow.append(p)
-        return [], slow
+        return low, slow
 
     def table_products(self, products, show_alert=False, show_last_sale=False):
         rows=[]
@@ -1926,16 +1841,16 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
             bal = product_balance(p["id"])
             badge = ""
             if show_alert:
-                pass
+                badge = "<span class='badge low'>LOW</span>" if bal <= int(p["low_stock_threshold"]) else "<span class='badge ok'>OK</span>"
             last_sale = product_last_sale_date(p["id"])
             last_sale_txt = last_sale.isoformat() if last_sale else "Never"
-            rows.append(f"<tr><td><b>{html_escape(p['name'])}</b><div class='muted'></div></td><td>{bal}</td><td>{last_sale_txt if show_last_sale else ''}</td></tr>")
+            rows.append(f"<tr><td><b>{html_escape(p['name'])}</b><div class='muted'>SKU: {html_escape(p['sku'] or '-')}</div></td><td>{bal}</td><td>{badge}</td><td>{last_sale_txt if show_last_sale else ''}</td></tr>")
         if not rows:
             return "<p class='muted'>None</p>"
         head_extra = "<th>Last Sale</th>" if show_last_sale else "<th></th>"
         return f"""
 <table>
-  <thead><tr><th>Product</th><th>Quantity</th>{head_extra}</tr></thead>
+  <thead><tr><th>Product</th><th>Balance</th><th>Alert</th>{head_extra}</tr></thead>
   <tbody>{''.join(rows)}</tbody>
 </table>
 """
