@@ -727,6 +727,31 @@ small{color:#6b7280}
 
 .table-wrap{overflow-x:auto;border-radius:12px}
 @media (max-width:768px){table{min-width:650px}}
+
+/* --- Sidebar Layout (Desktop) --- */
+.app-shell{{display:flex;min-height:100vh}}
+.sidebar{{width:260px;background:#fff;border-right:1px solid #e5e7eb;padding:16px;position:sticky;top:0;height:100vh;overflow:auto}}
+.sidebar-brand{{display:flex;gap:10px;align-items:center;margin-bottom:16px}}
+.side-logo{{width:42px;height:42px;border-radius:12px;object-fit:cover;border:1px solid #e5e7eb;background:#f1f5f9}}
+.side-title{{font-weight:900;font-size:16px;line-height:1.1}}
+.side-sub{{font-size:12px;color:#64748b;margin-top:2px}}
+.nav{{display:flex;flex-direction:column;gap:10px}}
+.nav a{{padding:12px 12px;border-radius:12px;font-weight:800;background:#f8fafc;margin-left:0;display:block;text-align:left}}
+.nav a:hover{{background:#eef2ff}}
+.main{{flex:1;background:#f6f7fb}}
+.content{{max-width:1100px;margin:0 auto;padding:18px}}
+
+/* Mobile: slide-in sidebar */
+.mobile-menu-btn{{display:none;position:fixed;top:12px;left:12px;z-index:1100;width:44px;height:44px;border-radius:12px;border:1px solid #e5e7eb;background:#fff;font-size:22px;font-weight:900}}
+.backdrop{{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:1050}}
+@media (max-width:900px){{
+  .mobile-menu-btn{{display:block}}
+  .sidebar{{position:fixed;left:-280px;transition:left .2s ease;z-index:1200}}
+  .sidebar.open{{left:0}}
+  .backdrop.show{{display:block}}
+  .content{{padding-top:70px}}
+}}
+
 </style>
 """
 
@@ -774,36 +799,39 @@ small{color:#6b7280}
 {self.styles()}
 </head>
 <body>
-  <div class="topbar">
-    <div class="brand">
-      <img src="/static/logo.svg" alt="Dipower logo">
+
+<button class="mobile-menu-btn" onclick="toggleSidebar()" aria-label="Open menu">☰</button>
+<div class="backdrop" onclick="toggleSidebar(true)"></div>
+
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <img class="side-logo" src="/static/logo.png" alt="Dipower">
       <div>
-        <div class="name">{APP_NAME}</div>
-        <div class="tag">Inventory • Sales • Returns • Stock Control</div>
+        <div class="side-title">Dipower Stores</div>
+        <div class="side-sub">Inventory • Sales • Returns</div>
       </div>
     </div>
-    <button class="menu-toggle" onclick="toggleMenu()" aria-label="Open menu">☰</button>
-    {nav}
-  </div>
-  <div class="container">
-    {content_html}
-  </div>
-  <div class="footer">© {now_utc().year} Dipower Stores</div>
+    {{nav}}
+  </aside>
+
+  <main class="main">
+    <div class="content">
+      {{flash_html}}
+      {{content_html}}
+    </div>
+  </main>
+</div>
 
 <script>
-function toggleMenu(){{
-  const nav = document.querySelector('.nav');
-  if(!nav) return;
-  nav.style.display = (nav.style.display === 'flex') ? 'none' : 'flex';
+function toggleSidebar(forceClose){{
+  const sb = document.querySelector('.sidebar');
+  const bd = document.querySelector('.backdrop');
+  if(!sb || !bd) return;
+  if(forceClose){{ sb.classList.remove('open'); bd.classList.remove('show'); return; }}
+  const open = sb.classList.toggle('open');
+  if(open) bd.classList.add('show'); else bd.classList.remove('show');
 }}
-document.addEventListener('click', function(e){{
-  const nav = document.querySelector('.nav');
-  const btn = document.querySelector('.menu-toggle');
-  if(!nav || !btn) return;
-  if(nav.style.display === 'flex' && !nav.contains(e.target) && !btn.contains(e.target)){{
-    nav.style.display = 'none';
-  }}
-}});
 </script>
 
 </body></html>
@@ -1002,7 +1030,7 @@ document.addEventListener('click', function(e){{
         rows = []
         for p in products:
             bal = product_balance(p["id"])
-            rows.append(f"<tr><td><b>{p['name']}</b><div class='muted'>SKU: {p['sku'] or '-'}</div></td><td>{bal}</td></tr>")
+            rows.append(f"<tr><td><b>{p['name']}</b><div class='muted'></div></td><td>{bal}</td></tr>")
         content = f"""
 <div class="grid">
   <div class="card">
@@ -1014,15 +1042,15 @@ document.addEventListener('click', function(e){{
     </div>
   </div>
   <div class="card">
-    <h3>Stock Balance</h3>
+    <h3>Stock Quantity</h3>
     <p class="muted">Quick view of current balances.</p>
   </div>
 </div>
 
 <div class="card" style="margin-top:14px">
-  <h3>Products & Balances</h3>
+  <h3>Products & Quantitys</h3>
   <table>
-    <thead><tr><th>Status</th><th>Product</th><th>Balance</th></tr></thead>
+    <thead><tr><th>Status</th><th>Product</th><th>Quantity</th></tr></thead>
     <tbody>
       {''.join(rows) if rows else "<tr><td colspan='3' class='muted'>No products yet. Ask CEO to add products.</td></tr>"}
     </tbody>
@@ -1050,10 +1078,10 @@ document.addEventListener('click', function(e){{
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <div><b>{p['name']}</b></div>
     </div>
-    <div class="muted">Code: {p['product_code'] or '-'} • SKU: {p['sku'] or '-'}</div>
+    <div class="muted">Code: {p['product_code'] or '-'} • </div>
   </div>
   <div style="text-align:right">
-    <div class="muted">Balance</div>
+    <div class="muted">Quantity</div>
     <div style="font-size:22px;font-weight:900">{bal}</div>
     {actions}
   </div>
@@ -1080,8 +1108,7 @@ document.addEventListener('click', function(e){{
   <form method="POST" action="/products/add" enctype="multipart/form-data">
     <div class="row">
       <div><label>Product name</label><input name="name" required></div>
-      <div><label>SKU (optional)</label><input name="sku"></div>
-    </div>
+      </div>
     <div class="row" style="margin-top:10px">
       <div><label>Product image (optional)</label><input type="file" name="image" accept="image/*"></div>
     </div>
@@ -1112,8 +1139,7 @@ document.addEventListener('click', function(e){{
   <form method="POST" action="/products/edit/{pid}" enctype="multipart/form-data">
     <div class="row">
       <div><label>Product name</label><input name="name" value="{html_escape(p['name'])}" required></div>
-      <div><label>SKU (optional)</label><input name="sku" value="{html_escape(p['sku'] or '')}"></div>
-    </div>
+      </div>
     <div class="row" style="margin-top:10px">
       <div><label>New image (optional)</label><input type="file" name="image" accept="image/*"></div>
     </div>
@@ -1637,8 +1663,8 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
     {img}
     <div style='flex:1;min-width:260px'>
       <h2 style='margin-top:0'>{html_escape(p['name'])}</h2>
-      <div class='muted'>Code: <b>{html_escape(code)}</b> • SKU: {html_escape(p['sku'] or '-') }</div>
-      <div style='margin-top:10px;font-size:18px'><b>Balance:</b> {bal}</div>
+      <div class='muted'>Code: <b>{html_escape(code)}</b> • </div>
+      <div style='margin-top:10px;font-size:18px'><b>Quantity:</b> {bal}</div>
       <div style='margin-top:14px;display:flex;gap:10px;flex-wrap:wrap'>
         <a class='btn primary' href='/sales/daily?product_id={p['id']}'>Record Sale</a>
         <a class='btn light' href='/returns?product_id={p['id']}'>Record Return</a>
@@ -1677,8 +1703,7 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
   <form method='POST' action='/products/request-edit/{pid}' enctype='multipart/form-data'>
     <div class='row'>
       <div><label>Name</label><input name='name' value='{html_escape(p['name'])}' required></div>
-      <div><label>SKU</label><input name='sku' value='{html_escape(p['sku'] or '')}'></div>
-    </div>
+      </div>
     <div class='row' style='margin-top:10px'>
       <div><label>New image (optional)</label><input type='file' name='image' accept='image/*'></div>
     </div>
@@ -1854,7 +1879,7 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
   <h2>Archive</h2>
   <p class='muted'>Only CEO can see archived products. You can restore or permanently delete.</p>
   <table>
-    <thead><tr><th>Product</th><th>Balance</th><th>Archived At</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Product</th><th>Quantity</th><th>Archived At</th><th>Actions</th></tr></thead>
     <tbody>{''.join(rows) if rows else '<tr><td colspan=4 class=muted>No archived products.</td></tr>'}</tbody>
   </table>
 </div>
@@ -1904,13 +1929,13 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
                 pass
             last_sale = product_last_sale_date(p["id"])
             last_sale_txt = last_sale.isoformat() if last_sale else "Never"
-            rows.append(f"<tr><td><b>{html_escape(p['name'])}</b><div class='muted'>SKU: {html_escape(p['sku'] or '-')}</div></td><td>{bal}</td><td>{last_sale_txt if show_last_sale else ''}</td></tr>")
+            rows.append(f"<tr><td><b>{html_escape(p['name'])}</b><div class='muted'></div></td><td>{bal}</td><td>{last_sale_txt if show_last_sale else ''}</td></tr>")
         if not rows:
             return "<p class='muted'>None</p>"
         head_extra = "<th>Last Sale</th>" if show_last_sale else "<th></th>"
         return f"""
 <table>
-  <thead><tr><th>Product</th><th>Balance</th>{head_extra}</tr></thead>
+  <thead><tr><th>Product</th><th>Quantity</th>{head_extra}</tr></thead>
   <tbody>{''.join(rows)}</tbody>
 </table>
 """
