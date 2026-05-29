@@ -55,7 +55,6 @@ def now_utc():
     return dt.datetime.utcnow()
 
 def today_local():
-    # simple: use server time; you can change to Africa/Lagos if desired
     return dt.date.today()
 
 def start_of_week(d: dt.date) -> dt.date:
@@ -118,7 +117,7 @@ def init_db():
             product_id INTEGER NOT NULL,
             movement_type TEXT NOT NULL CHECK(movement_type IN ('IN','SALE','RETURN')),
             qty INTEGER NOT NULL,
-            unit_price INTEGER NOT NULL DEFAULT 0, -- store in kobo/naira minor units if you want; here just integer Naira
+            unit_price INTEGER NOT NULL DEFAULT 0,
             ref TEXT,
             occurred_on TEXT NOT NULL,
             created_by INTEGER,
@@ -136,12 +135,9 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
         );
         """)
-    # ensure one CEO max is enforced by code, but we can also enforce by trigger:
-    # (SQLite partial unique indexes are supported)
     with db() as conn:
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_one_ceo ON users(role) WHERE role='CEO';")
 
-        # --- schema upgrades (safe migrations) ---
         if not ensure_column(conn, "products", "product_code"):
             conn.execute("ALTER TABLE products ADD COLUMN product_code TEXT")
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_code ON products(product_code)")
@@ -247,7 +243,6 @@ def product_last_sale_date(product_id: int):
         return dt.date.fromisoformat(r["occurred_on"]) if r else None
 
 def totals_between(start_date: dt.date, end_date: dt.date):
-    # inclusive start, inclusive end
     with db() as conn:
         sales = conn.execute("""
             SELECT COALESCE(SUM(qty*unit_price),0) as total
@@ -302,7 +297,6 @@ class AppHandler(BaseHTTPRequestHandler):
             data = parse_qs(raw.decode("utf-8"))
             return ("form", {k: v[0] for k, v in data.items()}, None)
         if ctype.startswith("multipart/form-data"):
-            # very small multipart parser (handles file uploads + fields)
             boundary = None
             m = re.search(r'boundary=(.+)', ctype)
             if m:
@@ -415,7 +409,6 @@ class AppHandler(BaseHTTPRequestHandler):
             token = path.split("/", 2)[2]
             return self.page_reset_form(token)
 
-        # Auth-required pages
         if path == "/dashboard":
             u = self.require_login()
             if not u:
@@ -468,7 +461,6 @@ class AppHandler(BaseHTTPRequestHandler):
             if u["role"] != "CEO":
                 return self.send_html(self.layout(u, "<h2>Forbidden</h2>"), 403)
             return self.page_approvals(u)
-
 
         if path == "/scan":
             u = self.require_login()
@@ -546,7 +538,6 @@ class AppHandler(BaseHTTPRequestHandler):
             token = path.split("/", 2)[2]
             return self.handle_reset_submit(token, fields)
 
-        # Auth required actions
         u = self.require_login()
         if not u: return
 
@@ -621,18 +612,20 @@ class AppHandler(BaseHTTPRequestHandler):
 *{box-sizing:border-box}
 body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#f6f7fb;color:#111827}
 a{color:inherit}
-.topbar{
-  position:sticky;top:0;z-index:10;
-  display:flex;justify-content:space-between;align-items:center;
-  padding:14px 20px;background:white;border-bottom:1px solid #eaeaf2
+.sidebar{
+  position:fixed;top:0;left:0;bottom:0;width:260px;
+  display:flex;flex-direction:column;
+  padding:20px;background:white;border-right:1px solid #eaeaf2;
+  overflow-y:auto;z-index:10;
 }
-.brand{display:flex;align-items:center;gap:12px}
-.brand img{height:44px}
-.brand .name{font-weight:900}
+.brand{display:flex;flex-direction:column;gap:4px;margin-bottom:14px}
+.brand img{height:44px;width:auto;align-self:flex-start}
+.brand .name{font-weight:900;font-size:18px}
 .brand .tag{font-size:12px;color:#6b7280}
-.nav a{margin-left:10px;text-decoration:none;padding:9px 12px;border-radius:10px;background:#eef2ff;font-weight:800;color:#1f2937}
+.nav{display:flex;flex-direction:column;gap:6px;width:100%}
+.nav a{text-decoration:none;padding:9px 12px;border-radius:10px;background:#eef2ff;font-weight:800;color:#1f2937;display:block}
 .nav a.primary{background:var(--accent);color:white}
-.container{max-width:1100px;margin:0 auto;padding:18px}
+.container{margin-left:260px;padding:24px;min-height:100vh;display:flex;flex-direction:column}
 .hero{
   border-radius:18px;overflow:hidden;
   background:linear-gradient(120deg,var(--bg),#182a52);
@@ -660,7 +653,7 @@ a{color:inherit}
 .hero video{width:100%;border-radius:14px;display:block;background:#000}
 .btn{
   display:inline-block;text-decoration:none;font-weight:900;
-  padding:11px 16px;border-radius:12px;border:0;cursor:pointer
+  padding:11px 16px;border-radius:12px;border:0;cursor:pointer;text-align:center
 }
 .btn.primary{background:var(--accent);color:white}
 .btn.light{background:#eef2ff;color:#111827}
@@ -686,7 +679,12 @@ input,select{
 }
 label{font-size:13px;font-weight:800;color:#374151}
 small{color:#6b7280}
-.footer{padding:18px;text-align:center;color:#6b7280}
+.footer{margin-top:auto;padding-top:24px;text-align:center;color:#6b7280}
+
+@media(max-width:768px){
+  .sidebar{position:static;width:100%;border-right:none;border-bottom:1px solid #eaeaf2;padding:16px}
+  .container{margin-left:0;padding:16px}
+}
 </style>
 """
 
@@ -700,8 +698,10 @@ small{color:#6b7280}
                   <a href="/products">Products</a>
                   <a href="/scan">Scan QR</a>
                   <a href="/stock/in">Stock In</a>
+                  <a href="/sales/daily" class="primary">Daily Sales</a>
+                  <a href="/returns">Returns</a>
                   <a href="/reports">Reports</a>
-                  <a href="/approvals" class="primary">User Approvals</a>
+                  <a href="/approvals">User Approvals</a>
                   <a href="/product-approvals">Product Requests</a>
                   <a href="/archive">Archive</a>
                   <a href="/activity">Activity</a>
@@ -734,20 +734,20 @@ small{color:#6b7280}
 {self.styles()}
 </head>
 <body>
-  <div class="topbar">
+  <div class="sidebar">
     <div class="brand">
       <img src="/static/logo.svg" alt="Dipower logo">
       <div>
         <div class="name">{APP_NAME}</div>
-        <div class="tag">Inventory • Sales • Returns • Stock Control</div>
+        <div class="tag">Inventory Control System</div>
       </div>
     </div>
     {nav}
   </div>
   <div class="container">
     {content_html}
+    <div class="footer">© {now_utc().year} Dipower Stores</div>
   </div>
-  <div class="footer">© {now_utc().year} Dipower Stores</div>
 </body></html>
 """
         return html
@@ -756,7 +756,6 @@ small{color:#6b7280}
         return f"<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>{title}</title>{self.styles()}</head><body><div class='container'>{body_html}</div></body></html>"
 
     def page_home(self, user):
-        # HTML5 video placeholder: user can upload static/welcome.mp4 later
         video = """
 <video autoplay muted loop playsinline>
   <source src="/static/welcome.mp4" type="video/mp4">
@@ -868,7 +867,6 @@ small{color:#6b7280}
         return self.send_html(self.layout(None, content, "Reset"))
 
     def page_ceo_dashboard(self, u):
-        # Alerts: low stock + slow movers
         low, slow = self.compute_alerts()
         today = today_local()
         wstart = start_of_week(today)
@@ -898,9 +896,13 @@ small{color:#6b7280}
     <div class="muted">See below for details.</div>
   </div>
   <div class="card">
-    <h3>Access Control</h3>
-    <p class="muted">Only you (CEO) can approve employee accounts.</p>
-    <a class="btn primary" href="/approvals">Approve employees</a>
+    <h3>Quick Actions</h3>
+    <p class="muted">Direct controls for processing transactions or worker profiles.</p>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <a class="btn primary" href="/sales/daily">Record Daily Sales</a>
+      <a class="btn light" href="/returns">Record Returns</a>
+      <a class="btn light" href="/approvals">Manage Workers</a>
+    </div>
   </div>
 </div>
 
@@ -929,9 +931,8 @@ small{color:#6b7280}
         return self.send_html(self.layout(u, content, "CEO Dashboard"))
 
     def page_employee_dashboard(self, u):
-        # employee can see products + balances quickly
         with db() as conn:
-            products = conn.execute("SELECT * FROM products WHERE is_archived=0 ORDER BY id DESC LIMIT 50").fetchall()
+            products = conn.execute("SELECT * FROM products WHERE is_archived=0 ORDER BY name ASC LIMIT 50").fetchall()
         rows = []
         for p in products:
             bal = product_balance(p["id"])
@@ -968,7 +969,7 @@ small{color:#6b7280}
 
     def page_products(self, u):
         with db() as conn:
-            products = conn.execute("SELECT * FROM products WHERE is_archived=0 ORDER BY id DESC").fetchall()
+            products = conn.execute("SELECT * FROM products WHERE is_archived=0 ORDER BY name ASC").fetchall()
         cards = []
         for p in products:
             bal = product_balance(p["id"])
@@ -999,7 +1000,7 @@ small{color:#6b7280}
         add_btn = "<a class='btn primary' href='/products/add'>Add Product</a>"
         content = f"""
 <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-  <h2 style="margin:0">Products</h2>
+  <h2 style="margin:0">Products (A-Z)</h2>
   {add_btn}
 </div>
 <div class="grid" style="grid-template-columns:1fr; margin-top:12px">
@@ -1096,7 +1097,6 @@ small{color:#6b7280}
     def page_daily_sales(self, u):
         if u["role"] not in ("CEO","EMPLOYEE"):
             return self.send_html(self.layout(u, "<h2>Forbidden</h2>"), 403)
-        from urllib.parse import urlparse, parse_qs
         q=parse_qs(urlparse(self.path).query)
         pref_pid = (q.get('product_id',[None])[0])
         opts = self.product_options(pref_pid)
@@ -1128,7 +1128,6 @@ small{color:#6b7280}
         return self.send_html(self.layout(u, content, "Daily Sales"))
 
     def page_returns(self, u):
-        from urllib.parse import urlparse, parse_qs
         q=parse_qs(urlparse(self.path).query)
         pref_pid = (q.get('product_id',[None])[0])
         opts = self.product_options(pref_pid)
@@ -1223,12 +1222,9 @@ small{color:#6b7280}
     def page_reports(self, u):
         today = today_local()
         year = today.year
-        # weekly
         ws = start_of_week(today)
         we = today
         sales_w, returns_w = totals_between(ws, we)
-
-        # month-to-date
         ms = dt.date(year, today.month, 1)
         sales_mtd, returns_mtd = totals_between(ms, today)
 
@@ -1463,7 +1459,6 @@ small{color:#6b7280}
     # QR Scan + Product Detail
     # ---------------------------
     def handle_qr_redirect(self, code: str):
-        # Use an external QR image generator (no extra Python dependencies)
         from urllib.parse import quote
         url = f"https://api.qrserver.com/v1/create-qr-code/?size=220x220&data={quote(code)}"
         self.send_response(302)
@@ -1556,7 +1551,6 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
         return self.send_html(self.layout(u, content, 'Scan QR'))
 
     def page_product_detail(self, u, pid_or_code):
-        # pid_or_code can be numeric id or a product_code like DP-000001
         key = str(pid_or_code)
         with db() as conn:
             if key.isdigit():
@@ -1595,7 +1589,7 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
         return self.send_html(self.layout(u, content, 'Product'))
 
     # ---------------------------
-    # Product change requests (employee → CEO approval)
+    # Product change requests 
     # ---------------------------
     def page_request_edit(self, u, pid):
         if u['role'] != 'EMPLOYEE':
@@ -1659,9 +1653,7 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
         low_thr = int(fields.get('low_stock_threshold') or 0)
         proposed = {'name': name, 'sku': sku, 'low_stock_threshold': low_thr}
         if 'image' in files and files['image']['data']:
-            # store proposed image; CEO approval will apply it
             proposed['image_path'] = self.save_upload(files['image']['filename'], files['image']['data'])
-        import json
         with db() as conn:
             conn.execute("""
               INSERT INTO product_change_requests(product_id,requested_by,change_type,proposed_data,status,created_at)
@@ -1726,7 +1718,6 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
 
     def handle_product_approve(self, u, fields):
         rid = int(fields.get('request_id') or 0)
-        import json
         with db() as conn:
             r = conn.execute("SELECT * FROM product_change_requests WHERE id=?", (rid,)).fetchone()
             if not r or r['status'] != 'PENDING':
@@ -1734,7 +1725,6 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
             pid = int(r['product_id'])
             if r['change_type'] == 'EDIT':
                 data = json.loads(r['proposed_data'] or '{}')
-                # apply edits
                 conn.execute("""
                   UPDATE products SET name=?, sku=?, low_stock_threshold=?, image_path=COALESCE(?, image_path), updated_at=?
                   WHERE id=?
@@ -1747,7 +1737,6 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
                     pid
                 ))
             else:
-                # DELETE => ARCHIVE
                 conn.execute("UPDATE products SET is_archived=1, updated_at=? WHERE id=?", (now_utc().isoformat(), pid))
             conn.execute("""
               UPDATE product_change_requests SET status='APPROVED', reviewed_by=?, reviewed_at=? WHERE id=?
