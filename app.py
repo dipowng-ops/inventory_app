@@ -632,9 +632,22 @@ a{color:inherit}
 .nav{display:flex;flex-direction:column;gap:6px;width:100%}
 .nav a{text-decoration:none;padding:9px 12px;border-radius:10px;background:#eef2ff;font-weight:800;color:#1f2937;display:block}
 .nav a.primary{background:var(--accent);color:white}
-.nav .sub-label{margin:12px 0 4px 6px;font-size:11px;font-weight:800;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em}
-.nav .sub-link{font-size:13px;padding:7px 12px;background:#f9fafb;margin-left:10px;border-left:2px solid #e5e7eb;border-radius:0 8px 8px 0}
-.nav .sub-link.active{background:#f3f4f6;border-left-color:var(--accent);font-weight:900}
+
+/* Dropdown styling */
+.nav-dropdown { width: 100%; margin-top: 6px; }
+.nav-dropdown-btn {
+  width: 100%; text-align: left; background: #eef2ff; color: #1f2937;
+  padding: 10px 12px; border: 0; font-weight: 800; font-size: 14px;
+  border-radius: 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+}
+.nav-dropdown-content { display: none; flex-direction: column; gap: 4px; padding-top: 4px; }
+.nav .sub-link {
+  text-decoration: none; padding: 8px 12px; border-radius: 8px;
+  background: #f9fafb; font-weight: 600; color: #4b5563; display: block;
+  margin-left: 10px; border-left: 2px solid #e5e7eb; font-size: 13px;
+}
+.nav .sub-link.active { background: #e5e7ff; border-left-color: var(--accent); font-weight: 900; color: #1f2937; }
+
 .container{margin-left:260px;padding:24px;min-height:100vh;display:flex;flex-direction:column}
 .hero{
   border-radius:18px;overflow:hidden;
@@ -712,16 +725,46 @@ small{color:#6b7280}
                   <a href="/sales/daily" class="primary">Daily Sales</a>
                   <a href="/returns">Returns</a>
                   
-                  <div class="sub-label">Activity & Operations</div>
-                  <a href="/store-sales" class="sub-link {'active' if url_path=='/store-sales' else ''}">🏪 Store Sales</a>
-                  <a href="/approvals" class="sub-link {'active' if url_path=='/approvals' else ''}">👥 User Approvals</a>
-                  <a href="/product-approvals" class="sub-link {'active' if url_path=='/product-approvals' else ''}">📦 Product Requests</a>
-                  <a href="/reports" class="sub-link {'active' if url_path=='/reports' else ''}">📊 Reports</a>
-                  <a href="/archive" class="sub-link {'active' if url_path=='/archive' else ''}">🗄️ Archive</a>
-                  <a href="/activity" class="sub-link {'active' if url_path=='/activity' else ''}">📜 System Audit Logs</a>
+                  <div class="nav-dropdown">
+                    <button class="nav-dropdown-btn" onclick="toggleNavDropdown()">
+                      📊 Activity & Operations <span id="dropArrow">▼</span>
+                    </button>
+                    <div id="dropContent" class="nav-dropdown-content">
+                      <a href="/store-sales" class="sub-link {'active' if url_path=='/store-sales' else ''}">🏪 Store Sales</a>
+                      <a href="/approvals" class="sub-link {'active' if url_path=='/approvals' else ''}">👥 User Approvals</a>
+                      <a href="/product-approvals" class="sub-link {'active' if url_path=='/product-approvals' else ''}">📦 Product Requests</a>
+                      <a href="/reports" class="sub-link {'active' if url_path=='/reports' else ''}">📊 Reports</a>
+                      <a href="/archive" class="sub-link {'active' if url_path=='/archive' else ''}">🗄️ Archive</a>
+                      <a href="/activity" class="sub-link {'active' if url_path=='/activity' else ''}">📜 System Audit Logs</a>
+                    </div>
+                  </div>
                   
-                  <a href="/logout" style="margin-top:10px;">Logout</a>
+                  <a href="/logout" style="margin-top:14px;">Logout</a>
                 </div>
+                
+                <script>
+                function toggleNavDropdown() {{
+                  var content = document.getElementById("dropContent");
+                  var arrow = document.getElementById("dropArrow");
+                  if (content.style.display === "flex") {{
+                    content.style.display = "none";
+                    arrow.textContent = "▼";
+                  }} else {{
+                    content.style.display = "flex";
+                    arrow.textContent = "▲";
+                  }}
+                }}
+                
+                // Keep folder open automatically if viewing an operation page
+                document.addEventListener("DOMContentLoaded", function() {{
+                  var path = window.location.pathname;
+                  var trackedPages = ["/store-sales", "/approvals", "/product-approvals", "/reports", "/archive", "/activity"];
+                  if (trackedPages.includes(path)) {{
+                    document.getElementById("dropContent").style.display = "flex";
+                    document.getElementById("dropArrow").textContent = "▲";
+                  }}
+                }});
+                </script>
                 """
             else:
                 nav = f"""
