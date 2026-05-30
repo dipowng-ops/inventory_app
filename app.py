@@ -632,6 +632,9 @@ a{color:inherit}
 .nav{display:flex;flex-direction:column;gap:6px;width:100%}
 .nav a{text-decoration:none;padding:9px 12px;border-radius:10px;background:#eef2ff;font-weight:800;color:#1f2937;display:block}
 .nav a.primary{background:var(--accent);color:white}
+.nav .sub-label{margin:12px 0 4px 6px;font-size:11px;font-weight:800;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em}
+.nav .sub-link{font-size:13px;padding:7px 12px;background:#f9fafb;margin-left:10px;border-left:2px solid #e5e7eb;border-radius:0 8px 8px 0}
+.nav .sub-link.active{background:#f3f4f6;border-left-color:var(--accent);font-weight:900}
 .container{margin-left:260px;padding:24px;min-height:100vh;display:flex;flex-direction:column}
 .hero{
   border-radius:18px;overflow:hidden;
@@ -697,23 +700,27 @@ small{color:#6b7280}
 
     def layout(self, user, content_html, title=""):
         nav = ""
+        url_path = urlparse(self.path).path
         if user:
             if user["role"] == "CEO":
                 nav = f"""
                 <div class="nav">
                   <a href="/dashboard">Dashboard</a>
                   <a href="/products">Products</a>
-                  <a href="/store-sales" style="background:#3b82f6;color:white;">🏪 Store Sales</a>
                   <a href="/scan">Scan QR</a>
                   <a href="/stock/in">Stock In</a>
                   <a href="/sales/daily" class="primary">Daily Sales</a>
                   <a href="/returns">Returns</a>
-                  <a href="/reports">Reports</a>
-                  <a href="/approvals">User Approvals</a>
-                  <a href="/product-approvals">Product Requests</a>
-                  <a href="/archive">Archive</a>
-                  <a href="/activity">Activity</a>
-                  <a href="/logout">Logout</a>
+                  
+                  <div class="sub-label">Activity & Operations</div>
+                  <a href="/store-sales" class="sub-link {'active' if url_path=='/store-sales' else ''}">🏪 Store Sales</a>
+                  <a href="/approvals" class="sub-link {'active' if url_path=='/approvals' else ''}">👥 User Approvals</a>
+                  <a href="/product-approvals" class="sub-link {'active' if url_path=='/product-approvals' else ''}">📦 Product Requests</a>
+                  <a href="/reports" class="sub-link {'active' if url_path=='/reports' else ''}">📊 Reports</a>
+                  <a href="/archive" class="sub-link {'active' if url_path=='/archive' else ''}">🗄️ Archive</a>
+                  <a href="/activity" class="sub-link {'active' if url_path=='/activity' else ''}">📜 System Audit Logs</a>
+                  
+                  <a href="/logout" style="margin-top:10px;">Logout</a>
                 </div>
                 """
             else:
@@ -909,7 +916,7 @@ small{color:#6b7280}
     <div style="display:flex; flex-direction:column; gap:8px;">
       <a class="btn primary" href="/sales/daily">Record Daily Sales</a>
       <a class="btn light" href="/returns">Record Returns</a>
-      <a class="btn light" href="/store-sales">Track Branch Sales</a>
+      <a class="btn light" href="/store-sales">Track Branch Operations</a>
     </div>
   </div>
 </div>
@@ -1315,13 +1322,14 @@ small{color:#6b7280}
             rows.append(f"<tr><td>{html_escape(l['created_at'])}</td><td>{html_escape(l['username'] or 'system')}</td><td><b>{html_escape(l['action'])}</b><div class='muted'>{meta}</div></td></tr>")
         content = f"""
 <div class="card">
-  <h2>Activity Log</h2>
+  <h2>System Audit Logs</h2>
+  <p class="muted">Raw timeline of structural modifications and programmatic events.</p>
   <table><thead><tr><th>Time</th><th>User</th><th>Action</th></tr></thead><tbody>
     {''.join(rows) if rows else "<tr><td colspan='3' class='muted'>No logs yet.</td></tr>"}
   </tbody></table>
 </div>
 """
-        return self.send_html(self.layout(u, content, "Activity"))
+        return self.send_html(self.layout(u, content, "System Audit Logs"))
 
     def page_reports(self, u):
         today = today_local()
