@@ -448,6 +448,13 @@ class AppHandler(BaseHTTPRequestHandler):
             if not u: return
             return self.page_returns(u)
 
+        if path == "/store-sales":
+            u = self.require_login()
+            if not u: return
+            if u["role"] != "CEO":
+                return self.send_html(self.layout(u, "<h2>Forbidden</h2>"), 403)
+            return self.page_store_sales(u)
+
         if path == "/activity":
             u = self.require_login()
             if not u: return
@@ -696,6 +703,7 @@ small{color:#6b7280}
                 <div class="nav">
                   <a href="/dashboard">Dashboard</a>
                   <a href="/products">Products</a>
+                  <a href="/store-sales" style="background:#3b82f6;color:white;">🏪 Store Sales</a>
                   <a href="/scan">Scan QR</a>
                   <a href="/stock/in">Stock In</a>
                   <a href="/sales/daily" class="primary">Daily Sales</a>
@@ -901,7 +909,7 @@ small{color:#6b7280}
     <div style="display:flex; flex-direction:column; gap:8px;">
       <a class="btn primary" href="/sales/daily">Record Daily Sales</a>
       <a class="btn light" href="/returns">Record Returns</a>
-      <a class="btn light" href="/approvals">Manage Workers</a>
+      <a class="btn light" href="/store-sales">Track Branch Sales</a>
     </div>
   </div>
 </div>
@@ -1117,8 +1125,12 @@ small{color:#6b7280}
       <div><label>Quantity</label><input type="number" min="1" name="qty" required></div>
     </div>
     <div class="row" style="margin-top:10px">
-      <div><label>Unit price (₦)</label><input type="number" min="0" name="unit_price" value="0"></div>
+      <div><label>Unit price (₦)</label><input type="number" min="0" name="unit_price" value="0" required></div>
+      <div><label>Store Details</label><input name="store_details" placeholder="e.g., Mainland Shop, Outlet B" required></div>
+    </div>
+    <div class="row" style="margin-top:10px">
       <div><label>Date</label><input type="date" name="date" value="{today_local().isoformat()}"></div>
+      <div></div>
     </div>
     <div style="margin-top:12px">
       <button class="btn primary" type="submit">Save Sale</button>
@@ -1148,8 +1160,12 @@ small{color:#6b7280}
       <div><label>Quantity</label><input type="number" min="1" name="qty" required></div>
     </div>
     <div class="row" style="margin-top:10px">
-      <div><label>Unit price (₦)</label><input type="number" min="0" name="unit_price" value="0"></div>
+      <div><label>Unit price (₦)</label><input type="number" min="0" name="unit_price" value="0" required></div>
+      <div><label>Store Details</label><input name="store_details" placeholder="e.g., Mainland Shop, Outlet B" required></div>
+    </div>
+    <div class="row" style="margin-top:10px">
       <div><label>Date</label><input type="date" name="date" value="{today_local().isoformat()}"></div>
+      <div></div>
     </div>
     <div style="margin-top:12px">
       <button class="btn primary" type="submit">Save Return</button>
@@ -1159,6 +1175,92 @@ small{color:#6b7280}
 </div>
 """
         return self.send_html(self.layout(u, content, "Returns"))
+
+    def page_store_sales(self, u):
+        q = parse_qs(urlparse(self.path).query)
+        sel_store = (q.get('store', [None])[0] or "").strip()
+
+        with db() as conn:
+            stores = conn.execute("""
+                SELECT DISTINCT ref FROM stock_movements 
+                WHERE movement_type IN ('SALE', 'RETURN') AND ref IS NOT NULL AND ref != '' 
+                ORDER BY ref
+            """).fetchall()
+
+            sales_rows = []
+            total_revenue = 0
+            if sel_store:
+                items = conn.execute("""
+                    SELECT sm.*, p.name as product_name, p.product_code, p.sku, u.username as employee_name
+                    FROM stock_movements sm
+                    JOIN products p ON p.id = sm.product_id
+                    LEFT JOIN users u ON u.id = sm.created_by
+                    WHERE sm.movement_type IN ('SALE', 'RETURN') AND sm.ref = ?
+                    ORDER BY sm.occurred_on DESC, sm.created_at DESC
+                """, (sel_store,)).fetchall()
+
+                for s in items:
+                    amt = int(s['qty']) * int(s['unit_price'])
+                    if s['movement_type'] == 'SALE':
+                        total_revenue += amt
+                        type_badge = "<span class='badge ok'>SALE</span>"
+                    else:
+                        total_revenue -= amt
+                        type_badge = "<span class='badge low'>RETURN</span>"
+
+                    sales_rows.append(f"""
+                    <tr>
+                      <td>{html_escape(s['occurred_on'])}</td>
+                      <td>{type_badge}</td>
+                      <td><b>{html_escape(s['product_name'])}</b><div class='muted'>{html_escape(s['product_code'] or '-')}</div></td>
+                      <td>{s['qty']}</td>
+                      <td>₦{s['unit_price']:,}</td>
+                      <td><b>₦{amt:,}</b></td>
+                      <td><small>{html_escape(s['employee_name'] or 'System')}</small></td>
+                    </tr>
+                    """)
+
+        store_opts = "".join([f"<option value='{html_escape(s['ref'])}' {'selected' if sel_store == s['ref'] else ''}>{html_escape(s['ref'])}</option>" for s in stores])
+        
+        table_html = ""
+        if sel_store:
+            table_html = f"""
+            <div class="card" style="margin-top:16px; border-top: 4px solid var(--accent);">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h3>Operations Ledger: {html_escape(sel_store)}</h3>
+                <div style="font-size:18px;">Calculated Net Revenue: <b style="color:var(--ok)">₦{total_revenue:,}</b></div>
+              </div>
+              <table>
+                <thead>
+                  <tr><th>Date</th><th>Type</th><th>Item Details</th><th>Qty</th><th>Price</th><th>Total</th><th>Logged By</th></tr>
+                </thead>
+                <tbody>
+                  {"".join(sales_rows) if sales_rows else "<tr><td colspan='7' class='muted'>No records archived for this branch.</td></tr>"}
+                </tbody>
+              </table>
+            </div>
+            """
+
+        content = f"""
+        <div class="card">
+          <h2>🏪 Store Operations & Branch Tracker</h2>
+          <p class="muted">Select any branch location below to view audit lists of all sales and returned products.</p>
+          
+          <form method="GET" action="/store-sales" style="margin-top:14px;">
+            <div style="display:flex; gap:10px; align-items:center;">
+              <div style="flex:1;">
+                <select name="store" required>
+                  <option value="">Select a Branch Location...</option>
+                  {store_opts}
+                </select>
+              </div>
+              <button type="submit" class="btn primary" style="padding:12px 24px;">Filter Ledger</button>
+            </div>
+          </form>
+        </div>
+        {table_html}
+        """
+        return self.send_html(self.layout(u, content, "Store Sales Tracking"))
 
     def page_approvals(self, u):
         with db() as conn:
@@ -1400,9 +1502,10 @@ small{color:#6b7280}
         pid = int(fields.get("product_id") or 0)
         qty = int(fields.get("qty") or 0)
         unit_price = int(fields.get("unit_price") or 0)
+        store_details = (fields.get("store_details") or "").strip()
         date = fields.get("date") or today_local().isoformat()
-        if pid <= 0 or qty <= 0:
-            return self.send_html(self.layout(u, "<p class='err'>Invalid input.</p>"), 400)
+        if pid <= 0 or qty <= 0 or not store_details:
+            return self.send_html(self.layout(u, "<p class='err'>Invalid input. Store details are mandatory.</p>"), 400)
         bal = product_balance(pid)
         if qty > bal:
             return self.send_html(self.layout(u, "<p class='err'>Not enough stock for this sale.</p>"), 400)
@@ -1410,23 +1513,24 @@ small{color:#6b7280}
             conn.execute("""
               INSERT INTO stock_movements(product_id,movement_type,qty,unit_price,ref,occurred_on,created_by,created_at)
               VALUES(?,?,?,?,?,?,?,?)
-            """, (pid, "SALE", qty, unit_price, None, date, u["id"], now_utc().isoformat()))
-        log_action(u["id"], "SALE", {"product_id": pid, "qty": qty, "unit_price": unit_price})
+            """, (pid, "SALE", qty, unit_price, store_details, date, u["id"], now_utc().isoformat()))
+        log_action(u["id"], "SALE", {"product_id": pid, "qty": qty, "unit_price": unit_price, "store": store_details})
         return self.redirect("/dashboard")
 
     def handle_returns(self, u, fields):
         pid = int(fields.get("product_id") or 0)
         qty = int(fields.get("qty") or 0)
         unit_price = int(fields.get("unit_price") or 0)
+        store_details = (fields.get("store_details") or "").strip()
         date = fields.get("date") or today_local().isoformat()
-        if pid <= 0 or qty <= 0:
-            return self.send_html(self.layout(u, "<p class='err'>Invalid input.</p>"), 400)
+        if pid <= 0 or qty <= 0 or not store_details:
+            return self.send_html(self.layout(u, "<p class='err'>Invalid input. Store details are mandatory.</p>"), 400)
         with db() as conn:
             conn.execute("""
               INSERT INTO stock_movements(product_id,movement_type,qty,unit_price,ref,occurred_on,created_by,created_at)
               VALUES(?,?,?,?,?,?,?,?)
-            """, (pid, "RETURN", qty, unit_price, None, date, u["id"], now_utc().isoformat()))
-        log_action(u["id"], "RETURN", {"product_id": pid, "qty": qty, "unit_price": unit_price})
+            """, (pid, "RETURN", qty, unit_price, store_details, date, u["id"], now_utc().isoformat()))
+        log_action(u["id"], "RETURN", {"product_id": pid, "qty": qty, "unit_price": unit_price, "store": store_details})
         return self.redirect("/dashboard")
 
     def handle_approve(self, u, fields):
