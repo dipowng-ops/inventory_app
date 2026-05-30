@@ -1067,7 +1067,9 @@ small{color:#6b7280}
         return self.send_html(self.layout(u, content, "Edit Product"))
 
     def page_stock_in(self, u):
-        opts = self.product_options()
+        q = parse_qs(urlparse(self.path).query)
+        pref_pid = q.get('product_id', [None])[0]
+        opts = self.product_options(pref_pid)
         content = f"""
 <div class="card">
   <h2>Stock Upload (Stock In)</h2>
@@ -1573,9 +1575,10 @@ document.getElementById('file').addEventListener('change', async (ev)=>{
       <div class='muted'>Code: <b>{html_escape(code)}</b> • SKU: {html_escape(p['sku'] or '-') }</div>
       <div style='margin-top:10px;font-size:18px'><b>Balance:</b> {bal}</div>
       <div style='margin-top:14px;display:flex;gap:10px;flex-wrap:wrap'>
-        <a class='btn primary' href='/sales/daily?product_id={p['id']}'>Record Sale</a>
-        <a class='btn light' href='/returns?product_id={p['id']}'>Record Return</a>
-        <a class='btn light' href='/products'>Back to Products</a>
+        <a class='btn primary' href='/sales/daily?product_id={p['id']}'>+ Add Sale</a>
+        <a class='btn light' href='/returns?product_id={p['id']}'>↺ Record Return</a>
+        <a class='btn light' href='/stock/in?product_id={p['id']}'>📦 Stock In</a>
+        <a class='btn light' style='background:#f3f4f6;color:#4b5563' href='/products'>Back to Products</a>
       </div>
       <div class='muted' style='margin-top:10px'>Tip: Print the QR below and attach to the product.</div>
     </div>
