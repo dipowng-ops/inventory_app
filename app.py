@@ -2,68 +2,60 @@ import json
 import os
 from datetime import datetime
 
-class User:
-    def __init__(self, username, role='Employee'):
-        self.username = username
-        self.role = role
-
-class TrainingPortal:
-    def __init__(self):
-        self.videos = []
-
-    def upload_video(self, uploader, title, video_url, description):
-        """Only the Main CEO or Manager can upload training videos."""
-        if uploader.role not in ['Main CEO', 'Manager']:
-            return "Access Denied: Only leadership can upload training materials."
-        
-        video_entry = {
-            "title": title,
-            "url": video_url,
-            "description": description,
-            "uploaded_by": uploader.username,
-            "date": datetime.now().strftime("%Y-%m-%d")
-        }
-        self.videos.append(video_entry)
-        return f"Training video '{title}' uploaded successfully for staff."
-
-    def get_training_list(self):
-        """Allows all staff to see available training."""
-        if not self.videos:
-            return "No training videos available yet."
-        return self.videos
-
 class InventoryApp:
     def __init__(self):
-        self.products = {}
-        self.sales_log = []
-        self.training = TrainingPortal() # Integration of Training Portal
+        self.products = {}  
         self.report_dir = "download_portal"
-        
         if not os.path.exists(self.report_dir):
             os.makedirs(self.report_dir)
 
-    # ... [Existing Inventory functions: add_product, record_sale, etc.] ...
+    def add_product(self, name, cost_price, selling_price, quantity):
+        """
+        Includes prices in the product creation. 
+        Verifies similar names to prevent duplicates.
+        """
+        # 1. Verification (Check if name exists regardless of caps)
+        clean_name = name.strip().lower()
+        if clean_name in self.products:
+            return f"❌ Error: '{name}' already exists. Use a different name."
 
-# --- Operational Flow ---
-if __name__ == "__main__":
-    app = InventoryApp()
-    
-    # Setup Roles
-    ceo = User("Executive_Director", role="Main CEO")
-    staff = User("Staff_Member", role="Employee")
+        # 2. Price and Profit Calculation
+        cp = float(cost_price)
+        sp = float(selling_price)
+        profit_per_unit = sp - cp
 
-    # 1. CEO uploads a training video (e.g., hosted on YouTube, Vimeo, or a private server)
-    print(app.training.upload_video(
-        ceo, 
-        "Customer Service 101", 
-        "[company-server.com](https://company-server.com/videos/training01.mp4)", 
-        "How to handle returns effectively."
-    ))
+        # 3. Storage (Now includes price fields)
+        self.products[clean_name] = {
+            "display_name": name,
+            "cost_price": cp,
+            "selling_price": sp,
+            "quantity": int(quantity),
+            "profit_per_unit": profit_per_unit
+        }
+        return f"✅ Added '{name}': Cost ${cp} | Sale ${sp} | Profit/Unit ${profit_per_unit}"
 
-    # 2. Staff views the training list
-    available_videos = app.training.get_training_list()
-    for vid in available_videos:
-        print(f"Watch: {vid['title']} | Link: {vid['url']}")
+    def view_inventory(self):
+        """Displays all products with their cost and selling prices."""
+        print("\n--- Current Inventory & Pricing ---")
+        if not self.products:
+            print("Inventory is empty.")
+            return
 
-    # 3. Staff tries to upload (Should be blocked)
-    print(app.training.upload_video(staff, "Hack", "url", "desc"))
+        for key, p in self.products.items():
+            print(f"Product: {p['display_name']}")
+            print(f"   [Stock: {p['quantity']}]")
+            print(f"   [Cost Price: ${p['cost_price']}]")
+            print(f"   [Selling Price: ${p['selling_price']}]")
+            print(f"   [Margin: ${p['profit_per_unit']}]")
+            print("-" * 30)
+
+# --- How to use the upgraded pricing ---
+app = InventoryApp()
+
+# When you add a product now, you MUST provide 4 things: 
+# Name, Cost Price, Selling Price, and Quantity.
+app.add_product("Office Chair", 45.00, 89.99, 10)
+app.add_product("Desk Lamp", 15.00, 35.00, 25)
+
+# This will show you the prices you just added
+app.view_inventory()
